@@ -1,0 +1,9 @@
+# Python 3.13
+#
+# L'analyse en flux utilise principalement la bibliotheque standard Python.
+# matplotlib sert a generer les graphiques dans le notebook.
+#
+# Ces dependances servent a ouvrir, executer et visualiser le notebook.
+jupyterlab
+ipykernel
+matplotlib
