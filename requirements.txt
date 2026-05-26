@@ -2,8 +2,10 @@
 #
 # L'analyse en flux utilise principalement la bibliotheque standard Python.
 # matplotlib sert a generer les graphiques dans le notebook.
+# langdetect sert a estimer la langue des titres, abstracts, claims et descriptions.
 #
 # Ces dependances servent a ouvrir, executer et visualiser le notebook.
 jupyterlab
 ipykernel
 matplotlib
+langdetect
