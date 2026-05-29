@@ -4,8 +4,10 @@
 # matplotlib sert a generer les graphiques dans le notebook.
 # langdetect sert a estimer la langue des titres, abstracts, claims et descriptions.
 #
-# Ces dependances servent a ouvrir, executer et visualiser le notebook.
+# Ces dependances servent a ouvrir les notebooks et a lancer l'interface Streamlit.
 jupyterlab
 ipykernel
 matplotlib
 langdetect
+nltk
+streamlit
