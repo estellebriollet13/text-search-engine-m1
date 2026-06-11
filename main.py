@@ -26,6 +26,13 @@ DEFAULT_COMPARISON_QUERIES = [
     "intelligent robot cleaner",
     "AI robot vacuum",
     "automated robot cleaner",
+    "automaton cleaner",
+    "automaton cleaning system",
+    "automaton cleaner system",
+    "robots cleaners",
+    "robots cleaning systems",
+    "robot cleansing system",
+    "robot cleanser system",
     "robotic cleaning apparatus",
     "autonomous cleaning robot",
     "intelligent cleaning robot system",
@@ -258,7 +265,6 @@ def render_comparison_tab():
         return
 
     summary_df = build_comparison_summary(comparison_df, max_rank_display)
-    query_summary_df = build_query_summary(comparison_df, max_rank_display)
     matrix_df = build_presence_matrix(comparison_df, max_rank_display)
 
     dashboard_tab, matrix_tab, details_tab = st.tabs(
@@ -266,7 +272,7 @@ def render_comparison_tab():
     )
 
     with dashboard_tab:
-        render_comparison_dashboard(summary_df, query_summary_df, max_rank_display)
+        render_comparison_dashboard(summary_df, max_rank_display)
 
     with matrix_tab:
         render_comparison_matrix(matrix_df, max_rank_display)
@@ -409,32 +415,20 @@ def render_next_methods_tab():
     )
 
 
-def render_comparison_dashboard(summary_df, query_summary_df, max_rank_display):
+def render_comparison_dashboard(summary_df, max_rank_display):
     ranked_summary = rank_methods(summary_df)
 
     st.subheader("Top des méthodes")
-    podium_cols = st.columns(3)
-    for index, (_, method_row) in enumerate(ranked_summary.head(3).iterrows()):
-        podium_cols[index].metric(
-            f"Top {index + 1}",
-            method_row["méthode"],
-            delta=f"{method_row['taux de réussite']}% de réussite",
-            delta_color="off",
-        )
-
-    chart_col_1, chart_col_2 = st.columns(2, gap="large")
-    with chart_col_1:
-        st.caption("Nombre de variantes qui retrouvent le brevet cible")
-        st.bar_chart(
-            ranked_summary.set_index("méthode")["requêtes trouvées"],
-            use_container_width=True,
-        )
-    with chart_col_2:
-        st.caption("Nombre de méthodes qui retrouvent chaque variante")
-        st.bar_chart(
-            query_summary_df.set_index("requête")["méthodes qui trouvent"],
-            use_container_width=True,
-        )
+    top_methods_df = ranked_summary.head(5)[
+        [
+            "rang dashboard",
+            "méthode",
+            "taux de réussite",
+            f"taux top {max_rank_display}",
+            "rang moyen",
+        ]
+    ]
+    st.dataframe(top_methods_df, hide_index=True, use_container_width=True)
 
     st.subheader("Rang moyen")
     st.write(
@@ -539,29 +533,6 @@ def build_comparison_summary(comparison_df, max_rank_display):
                 "meilleur rang": best_rank,
                 "rang moyen": average_rank,
                 "meilleur score": round(found_df["score"].max(), 6) if not found_df.empty else 0.0,
-            }
-        )
-
-    return pd.DataFrame(summary_rows)
-
-
-def build_query_summary(comparison_df, max_rank_display):
-    summary_rows = []
-
-    for query, query_df in comparison_df.groupby("requête", sort=False):
-        found_df = query_df[query_df["trouvé"]]
-        top_rank_df = found_df[found_df["rang"] <= max_rank_display]
-        best_rank = int(found_df["rang"].min()) if not found_df.empty else None
-        best_methods = ", ".join(
-            found_df[found_df["rang"] == found_df["rang"].min()]["méthode"].tolist()
-        ) if not found_df.empty else ""
-        summary_rows.append(
-            {
-                "requête": query,
-                "méthodes qui trouvent": int(found_df.shape[0]),
-                f"méthodes top {max_rank_display}": int(top_rank_df.shape[0]),
-                "meilleur rang": best_rank,
-                "meilleure(s) méthode(s)": best_methods,
             }
         )
 
