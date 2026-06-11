@@ -1,8 +1,9 @@
 # Python 3.13
 #
-# L'analyse en flux utilise principalement la bibliotheque standard Python.
-# matplotlib sert a generer les graphiques dans le notebook.
+# matplotlib sert a generer les graphiques dans les notebooks.
 # langdetect sert a estimer la langue des titres, abstracts, claims et descriptions.
+# nltk sert a utiliser WordNet pour les synonymes et la lemmatisation.
+# pandas sert aux tableaux du dashboard de comparaison.
 #
 # Ces dependances servent a ouvrir les notebooks et a lancer l'interface Streamlit.
 jupyterlab
@@ -10,4 +11,5 @@ ipykernel
 matplotlib
 langdetect
 nltk
+pandas
 streamlit

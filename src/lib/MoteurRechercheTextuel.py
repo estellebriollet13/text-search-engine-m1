@@ -6,6 +6,12 @@ class MoteurRechercheTextuel:
         self.documents = {}  # { doc_id -> "texte" }
         self.tailles_documents = {}  # { doc_id -> nombre_de_mots }
         self.longueur_moyenne_documents = 0.0
+        self.index_lemmatise = None
+        self.tailles_documents_lemmatise = None
+        self.longueur_moyenne_documents_lemmatise = 0.0
+        self._wordnet = None
+        self._wordnet_disponible = None
+        self._lemmatizer = None
 
     def _nettoyer_texte(self, texte):
         """
@@ -23,8 +29,14 @@ class MoteurRechercheTextuel:
         self.documents = corpus
         self.index = {}
         self.tailles_documents = {}
+        self.index_lemmatise = None
+        self.tailles_documents_lemmatise = None
+        self.longueur_moyenne_documents_lemmatise = 0.0
+        mots_par_document = {}
+
         for doc_id in sorted(corpus.keys()):
             mots = self._nettoyer_texte(corpus[doc_id])
+            mots_par_document[doc_id] = mots
             self.tailles_documents[doc_id] = len(mots)
             if len(mots) == 0:
                 continue
@@ -37,7 +49,36 @@ class MoteurRechercheTextuel:
                 if mot not in self.index:
                     self.index[mot] = []
                 self.index[mot].append((doc_id, freq))
+
         self.longueur_moyenne_documents = self._calculer_longueur_moyenne_documents()
+        self._indexer_corpus_lemmatise(mots_par_document)
+
+    def _indexer_corpus_lemmatise(self, mots_par_document):
+        """
+        Construit l'index lemmatise au moment de l'indexation.
+        Si WordNet n'est pas disponible, on reutilise l'index brut.
+        """
+        if self._obtenir_lemmatizer() is None:
+            self.index_lemmatise = self.index
+            self.tailles_documents_lemmatise = self.tailles_documents
+            self.longueur_moyenne_documents_lemmatise = self.longueur_moyenne_documents
+            return
+
+        mots_lemmatises_par_document = {
+            doc_id: [
+                self._lemmatiser_mot(mot)
+                for mot in mots
+            ]
+            for doc_id, mots in mots_par_document.items()
+        }
+        self.index_lemmatise, self.tailles_documents_lemmatise = self._indexer_mots(
+            mots_lemmatises_par_document
+        )
+        self.longueur_moyenne_documents_lemmatise = (
+            self._calculer_longueur_moyenne_depuis_tailles(
+                self.tailles_documents_lemmatise
+            )
+        )
 
     def _intersecter_deux_listes(self, liste1, liste2):
         """
@@ -75,15 +116,7 @@ class MoteurRechercheTextuel:
 
     def _calculer_idf(self, terme):
         """Calcule l'IDF d'un terme avec l'ajustement pour éviter les divisions par 0."""
-        N = len(self.documents)
-        # df_t est la longueur de la posting list pour ce terme
-        df_t = len(self.index.get(terme, []))
-        
-        if df_t == 0:
-            return 0.0
-            
-        # Formule lissée classique
-        return math.log((N / (df_t + 1))) + 1
+        return self._calculer_idf_depuis_index(terme, self.index)
 
     def _calculer_longueur_moyenne_documents(self):
         """Calcule la longueur moyenne des documents indexés."""
@@ -98,20 +131,311 @@ class MoteurRechercheTextuel:
 
     def _calculer_idf_bm25(self, terme):
         """Calcule l'IDF utilise par BM25."""
+        return self._calculer_idf_bm25_depuis_index(terme, self.index)
+
+    def _calculer_idf_depuis_index(self, terme, index):
+        """Calcule l'IDF TF-IDF dans l'index fourni."""
         N = len(self.documents)
-        df_t = len(self.index.get(terme, []))
+        df_t = len(index.get(terme, []))
+
+        if df_t == 0:
+            return 0.0
+
+        return math.log((N / (df_t + 1))) + 1
+
+    def _calculer_idf_bm25_depuis_index(self, terme, index):
+        """Calcule l'IDF BM25 dans l'index fourni."""
+        N = len(self.documents)
+        df_t = len(index.get(terme, []))
 
         if N == 0 or df_t == 0:
             return 0.0
 
         return math.log(1 + ((N - df_t + 0.5) / (df_t + 0.5)))
 
-    def _frequence_terme_document(self, terme, doc_id):
+    def _frequence_terme_document(self, terme, doc_id, index=None):
         """Retourne la frequence brute d'un terme dans un document."""
-        for d_id, freq in self.index.get(terme, []):
+        if index is None:
+            index = self.index
+
+        for d_id, freq in index.get(terme, []):
             if d_id == doc_id:
                 return freq
         return 0
+
+    def _obtenir_wordnet(self):
+        """Retourne WordNet si la ressource locale est disponible."""
+        if self._wordnet_disponible is False:
+            return None
+        if self._wordnet_disponible is True:
+            return self._wordnet
+
+        try:
+            from nltk.corpus import wordnet
+
+            wordnet.synsets("test")
+        except Exception:
+            self._wordnet = None
+            self._wordnet_disponible = False
+            return None
+
+        self._wordnet = wordnet
+        self._wordnet_disponible = True
+        return self._wordnet
+
+    def _obtenir_lemmatizer(self):
+        """Retourne le lemmatizer WordNet si NLTK et WordNet sont disponibles."""
+        if self._obtenir_wordnet() is None:
+            return None
+        if self._lemmatizer is not None:
+            return self._lemmatizer
+
+        try:
+            from nltk.stem import WordNetLemmatizer
+        except Exception:
+            return None
+
+        self._lemmatizer = WordNetLemmatizer()
+        return self._lemmatizer
+
+    def _lemmatiser_mot(self, mot):
+        """Lemmatise un mot anglais, ou le retourne tel quel si WordNet manque."""
+        lemmatizer = self._obtenir_lemmatizer()
+        if lemmatizer is None:
+            return mot
+
+        try:
+            lemme_nom = lemmatizer.lemmatize(mot, pos="n")
+            return lemmatizer.lemmatize(lemme_nom, pos="v")
+        except Exception:
+            return mot
+
+    def _indexer_mots(self, mots_par_document):
+        """Construit un index inverse depuis {doc_id: [mots]}."""
+        index = {}
+        tailles_documents = {}
+
+        for doc_id in sorted(mots_par_document.keys()):
+            mots = mots_par_document[doc_id]
+            tailles_documents[doc_id] = len(mots)
+            if len(mots) == 0:
+                continue
+
+            frequences_locales = {}
+            for mot in mots:
+                frequences_locales[mot] = frequences_locales.get(mot, 0) + 1
+
+            for mot, freq in frequences_locales.items():
+                if mot not in index:
+                    index[mot] = []
+                index[mot].append((doc_id, freq))
+
+        return index, tailles_documents
+
+    def _calculer_longueur_moyenne_depuis_tailles(self, tailles_documents):
+        """Calcule la longueur moyenne depuis un dictionnaire de tailles."""
+        tailles_non_vides = [
+            taille
+            for taille in tailles_documents.values()
+            if taille > 0
+        ]
+        if not tailles_non_vides:
+            return 0.0
+        return sum(tailles_non_vides) / len(tailles_non_vides)
+
+    def _obtenir_index_lemmatise(self):
+        """Construit puis met en cache un index base sur les lemmes."""
+        if self.index_lemmatise is not None:
+            return (
+                self.index_lemmatise,
+                self.tailles_documents_lemmatise,
+                self.longueur_moyenne_documents_lemmatise,
+            )
+
+        if self._obtenir_lemmatizer() is None:
+            self.index_lemmatise = self.index
+            self.tailles_documents_lemmatise = self.tailles_documents
+            self.longueur_moyenne_documents_lemmatise = self.longueur_moyenne_documents
+            return (
+                self.index_lemmatise,
+                self.tailles_documents_lemmatise,
+                self.longueur_moyenne_documents_lemmatise,
+            )
+
+        mots_par_document = {}
+        for doc_id, texte in self.documents.items():
+            mots_par_document[doc_id] = [
+                self._lemmatiser_mot(mot)
+                for mot in self._nettoyer_texte(texte)
+            ]
+
+        self.index_lemmatise, self.tailles_documents_lemmatise = self._indexer_mots(
+            mots_par_document
+        )
+        self.longueur_moyenne_documents_lemmatise = (
+            self._calculer_longueur_moyenne_depuis_tailles(
+                self.tailles_documents_lemmatise
+            )
+        )
+
+        return (
+            self.index_lemmatise,
+            self.tailles_documents_lemmatise,
+            self.longueur_moyenne_documents_lemmatise,
+        )
+
+    def _synonymes_mot(self, mot, limite=12):
+        """Retourne le mot et ses synonymes WordNet presents dans l'index."""
+        synonymes = [mot]
+        wordnet = self._obtenir_wordnet()
+        if wordnet is None:
+            return synonymes
+
+        try:
+            for synset in wordnet.synsets(mot):
+                for lemme in synset.lemma_names():
+                    synonyme = lemme.lower().replace("_", " ")
+                    mots_synonyme = self._nettoyer_texte(synonyme)
+                    if len(mots_synonyme) != 1:
+                        continue
+                    synonyme = mots_synonyme[0]
+                    if synonyme not in synonymes:
+                        synonymes.append(synonyme)
+                    if len(synonymes) >= limite:
+                        return synonymes
+        except Exception:
+            return [mot]
+
+        return synonymes
+
+    def _groupes_termes_synonymes(self, requete_texte):
+        """Prepare les groupes de termes equivalents pour une requete."""
+        groupes = []
+        for mot in self._nettoyer_texte(requete_texte):
+            lemme = self._lemmatiser_mot(mot)
+            groupes.append([
+                self._lemmatiser_mot(synonyme)
+                for synonyme in self._synonymes_mot(lemme)
+            ])
+        return groupes
+
+    def _groupes_termes_lemmatises(self, requete_texte):
+        """Prepare les termes lemmatises de la requete."""
+        return [
+            [self._lemmatiser_mot(mot)]
+            for mot in self._nettoyer_texte(requete_texte)
+        ]
+
+    def _documents_candidats_groupes(self, groupes_termes, index):
+        """
+        Retourne les documents qui contiennent au moins un terme de chaque groupe.
+        Chaque groupe represente un mot de requete et ses variantes.
+        """
+        ensembles_par_groupe = []
+        for groupe in groupes_termes:
+            doc_ids_groupe = set()
+            for terme in groupe:
+                for doc_id, _ in index.get(terme, []):
+                    doc_ids_groupe.add(doc_id)
+            if not doc_ids_groupe:
+                return []
+            ensembles_par_groupe.append(doc_ids_groupe)
+
+        doc_ids = set.intersection(*ensembles_par_groupe)
+        return sorted(doc_ids)
+
+    def _chercher_tfidf_groupes(self, groupes_termes, index, tailles_documents):
+        """Recherche TF-IDF avec des groupes de termes equivalents."""
+        groupes_termes = [groupe for groupe in groupes_termes if groupe]
+        if not groupes_termes:
+            return []
+
+        doc_ids_filtres = self._documents_candidats_groupes(groupes_termes, index)
+        if not doc_ids_filtres:
+            return []
+
+        idfs = {
+            terme: self._calculer_idf_depuis_index(terme, index)
+            for groupe in groupes_termes
+            for terme in groupe
+        }
+        scores_documents = {}
+
+        for doc_id in doc_ids_filtres:
+            score_total = 0.0
+            taille_doc = tailles_documents[doc_id]
+            if taille_doc == 0:
+                continue
+
+            for groupe in groupes_termes:
+                meilleurs_scores = []
+                for terme in groupe:
+                    frequence_brute = self._frequence_terme_document(
+                        terme, doc_id, index
+                    )
+                    if frequence_brute == 0:
+                        continue
+                    tf = frequence_brute / taille_doc
+                    meilleurs_scores.append(tf * idfs[terme])
+                if meilleurs_scores:
+                    score_total += max(meilleurs_scores)
+
+            scores_documents[doc_id] = score_total
+
+        return sorted(scores_documents.items(), key=lambda x: x[1], reverse=True)
+
+    def _chercher_bm25_groupes(
+        self,
+        groupes_termes,
+        index,
+        tailles_documents,
+        longueur_moyenne_documents,
+        k1=1.5,
+        b=0.75,
+    ):
+        """Recherche BM25 avec des groupes de termes equivalents."""
+        groupes_termes = [groupe for groupe in groupes_termes if groupe]
+        if not groupes_termes or longueur_moyenne_documents == 0:
+            return []
+
+        doc_ids_filtres = self._documents_candidats_groupes(groupes_termes, index)
+        if not doc_ids_filtres:
+            return []
+
+        idfs = {
+            terme: self._calculer_idf_bm25_depuis_index(terme, index)
+            for groupe in groupes_termes
+            for terme in groupe
+        }
+        scores_documents = {}
+
+        for doc_id in doc_ids_filtres:
+            score_total = 0.0
+            taille_doc = tailles_documents[doc_id]
+
+            for groupe in groupes_termes:
+                meilleurs_scores = []
+                for terme in groupe:
+                    frequence_brute = self._frequence_terme_document(
+                        terme, doc_id, index
+                    )
+                    if frequence_brute == 0:
+                        continue
+
+                    normalisation_longueur = 1 - b + b * (
+                        taille_doc / longueur_moyenne_documents
+                    )
+                    numerateur = frequence_brute * (k1 + 1)
+                    denominateur = frequence_brute + k1 * normalisation_longueur
+                    meilleurs_scores.append(
+                        idfs[terme] * (numerateur / denominateur)
+                    )
+                if meilleurs_scores:
+                    score_total += max(meilleurs_scores)
+
+            scores_documents[doc_id] = score_total
+
+        return sorted(scores_documents.items(), key=lambda x: x[1], reverse=True)
 
     def chercher_tfidf(self, requete_texte):
         """
@@ -199,3 +523,61 @@ class MoteurRechercheTextuel:
         resultats_tries = sorted(scores_documents.items(), key=lambda x: x[1], reverse=True)
 
         return resultats_tries
+
+    def wordnet_est_disponible(self):
+        """Indique si les ressources WordNet locales sont disponibles."""
+        return self._obtenir_wordnet() is not None
+
+    def chercher_tfidf_lemmatise(self, requete_texte):
+        """
+        Calcule le score TF-IDF sur une version lemmatisée de l'index et de la requête.
+        """
+        donnees_index = self._obtenir_index_lemmatise()
+        index, tailles_documents, _ = donnees_index
+        groupes_termes = self._groupes_termes_lemmatises(requete_texte)
+
+        return self._chercher_tfidf_groupes(groupes_termes, index, tailles_documents)
+
+    def chercher_bm25_lemmatise(self, requete_texte, k1=1.5, b=0.75):
+        """
+        Calcule le score BM25 sur une version lemmatisée de l'index et de la requête.
+        """
+        donnees_index = self._obtenir_index_lemmatise()
+        index, tailles_documents, longueur_moyenne_documents = donnees_index
+        groupes_termes = self._groupes_termes_lemmatises(requete_texte)
+
+        return self._chercher_bm25_groupes(
+            groupes_termes,
+            index,
+            tailles_documents,
+            longueur_moyenne_documents,
+            k1=k1,
+            b=b,
+        )
+
+    def chercher_tfidf_synonymes(self, requete_texte):
+        """
+        Calcule le score TF-IDF après expansion de chaque terme avec ses synonymes.
+        """
+        donnees_index = self._obtenir_index_lemmatise()
+        index, tailles_documents, _ = donnees_index
+        groupes_termes = self._groupes_termes_synonymes(requete_texte)
+
+        return self._chercher_tfidf_groupes(groupes_termes, index, tailles_documents)
+
+    def chercher_bm25_synonymes(self, requete_texte, k1=1.5, b=0.75):
+        """
+        Calcule le score BM25 après expansion de chaque terme avec ses synonymes.
+        """
+        donnees_index = self._obtenir_index_lemmatise()
+        index, tailles_documents, longueur_moyenne_documents = donnees_index
+        groupes_termes = self._groupes_termes_synonymes(requete_texte)
+
+        return self._chercher_bm25_groupes(
+            groupes_termes,
+            index,
+            tailles_documents,
+            longueur_moyenne_documents,
+            k1=k1,
+            b=b,
+        )
