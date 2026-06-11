@@ -5,6 +5,7 @@ class MoteurRechercheTextuel:
         self.index = {}  # { terme -> [(doc_id, freq), ...] }
         self.documents = {}  # { doc_id -> "texte" }
         self.tailles_documents = {}  # { doc_id -> nombre_de_mots }
+        self.longueur_moyenne_documents = 0.0
 
     def _nettoyer_texte(self, texte):
         """
@@ -20,6 +21,8 @@ class MoteurRechercheTextuel:
         Prend en entrée un dictionnaire { doc_id (int): "texte du document" (str) }
         """
         self.documents = corpus
+        self.index = {}
+        self.tailles_documents = {}
         for doc_id in sorted(corpus.keys()):
             mots = self._nettoyer_texte(corpus[doc_id])
             self.tailles_documents[doc_id] = len(mots)
@@ -34,6 +37,7 @@ class MoteurRechercheTextuel:
                 if mot not in self.index:
                     self.index[mot] = []
                 self.index[mot].append((doc_id, freq))
+        self.longueur_moyenne_documents = self._calculer_longueur_moyenne_documents()
 
     def _intersecter_deux_listes(self, liste1, liste2):
         """
@@ -81,6 +85,34 @@ class MoteurRechercheTextuel:
         # Formule lissée classique
         return math.log((N / (df_t + 1))) + 1
 
+    def _calculer_longueur_moyenne_documents(self):
+        """Calcule la longueur moyenne des documents indexés."""
+        tailles_non_vides = [
+            taille
+            for taille in self.tailles_documents.values()
+            if taille > 0
+        ]
+        if not tailles_non_vides:
+            return 0.0
+        return sum(tailles_non_vides) / len(tailles_non_vides)
+
+    def _calculer_idf_bm25(self, terme):
+        """Calcule l'IDF utilise par BM25."""
+        N = len(self.documents)
+        df_t = len(self.index.get(terme, []))
+
+        if N == 0 or df_t == 0:
+            return 0.0
+
+        return math.log(1 + ((N - df_t + 0.5) / (df_t + 0.5)))
+
+    def _frequence_terme_document(self, terme, doc_id):
+        """Retourne la frequence brute d'un terme dans un document."""
+        for d_id, freq in self.index.get(terme, []):
+            if d_id == doc_id:
+                return freq
+        return 0
+
     def chercher_tfidf(self, requete_texte):
         """
         Exécute la requête AND, calcule le score TF-IDF des documents correspondants
@@ -127,4 +159,43 @@ class MoteurRechercheTextuel:
         # sorted renvoie une liste de couples (doc_id, score)
         resultats_tries = sorted(scores_documents.items(), key=lambda x: x[1], reverse=True)
         
+        return resultats_tries
+
+    def chercher_bm25(self, requete_texte, k1=1.5, b=0.75):
+        """
+        Exécute la requête AND, calcule le score BM25 des documents correspondants
+        et les renvoie triés par pertinence décroissante.
+        """
+        mots_requete = self._nettoyer_texte(requete_texte)
+        if not mots_requete or self.longueur_moyenne_documents == 0:
+            return []
+
+        documents_candidats = self.requete_and(requete_texte)
+        if not documents_candidats:
+            return []
+
+        doc_ids_filtres = [couple[0] for couple in documents_candidats]
+        idfs_requete = {mot: self._calculer_idf_bm25(mot) for mot in mots_requete}
+        scores_documents = {}
+
+        for doc_id in doc_ids_filtres:
+            score_total = 0.0
+            taille_doc = self.tailles_documents[doc_id]
+
+            for mot in mots_requete:
+                frequence_brute = self._frequence_terme_document(mot, doc_id)
+                if frequence_brute == 0:
+                    continue
+
+                normalisation_longueur = 1 - b + b * (
+                    taille_doc / self.longueur_moyenne_documents
+                )
+                numerateur = frequence_brute * (k1 + 1)
+                denominateur = frequence_brute + k1 * normalisation_longueur
+                score_total += idfs_requete[mot] * (numerateur / denominateur)
+
+            scores_documents[doc_id] = score_total
+
+        resultats_tries = sorted(scores_documents.items(), key=lambda x: x[1], reverse=True)
+
         return resultats_tries
