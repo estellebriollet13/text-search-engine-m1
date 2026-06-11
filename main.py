@@ -261,8 +261,6 @@ def render_comparison_tab():
     query_summary_df = build_query_summary(comparison_df, max_rank_display)
     matrix_df = build_presence_matrix(comparison_df, max_rank_display)
 
-    render_comparison_metrics(summary_df, query_summary_df, len(queries), target_doc_id)
-
     dashboard_tab, matrix_tab, details_tab = st.tabs(
         ["Dashboard", "Matrice de robustesse", "Détails"]
     )
@@ -411,38 +409,8 @@ def render_next_methods_tab():
     )
 
 
-def render_comparison_metrics(summary_df, query_summary_df, query_count, target_doc_id):
-    ranked_summary = rank_methods(summary_df)
-    best_method = ranked_summary.iloc[0]
-    hardest_query = query_summary_df.sort_values(
-        ["méthodes qui trouvent", "meilleur rang"],
-        ascending=[True, True],
-    ).iloc[0]
-
-    metric_col_1, metric_col_2, metric_col_3, metric_col_4 = st.columns(4)
-    metric_col_1.metric("Meilleure méthode", best_method["méthode"])
-    metric_col_2.metric("Robustesse", f"{best_method['taux de réussite']}%")
-    metric_col_3.metric("Requêtes testées", query_count)
-    metric_col_4.metric("Brevet cible", f"Doc {target_doc_id}")
-
-    st.caption(
-        f"Requête la plus difficile : {hardest_query['requête']} "
-        f"({hardest_query['méthodes qui trouvent']} méthode(s) la retrouvent)."
-    )
-
-
 def render_comparison_dashboard(summary_df, query_summary_df, max_rank_display):
     ranked_summary = rank_methods(summary_df)
-    podium_df = ranked_summary[
-        [
-            "rang dashboard",
-            "méthode",
-            "taux de réussite",
-            f"taux top {max_rank_display}",
-            "meilleur rang",
-            "rang moyen",
-        ]
-    ]
 
     st.subheader("Top des méthodes")
     podium_cols = st.columns(3)
@@ -450,46 +418,33 @@ def render_comparison_dashboard(summary_df, query_summary_df, max_rank_display):
         podium_cols[index].metric(
             f"Top {index + 1}",
             method_row["méthode"],
-            f"{method_row['taux de réussite']}% de réussite",
+            delta=f"{method_row['taux de réussite']}% de réussite",
+            delta_color="off",
         )
-
-    st.dataframe(podium_df, hide_index=True, use_container_width=True)
 
     chart_col_1, chart_col_2 = st.columns(2, gap="large")
     with chart_col_1:
-        st.caption("Taux de réussite par méthode")
+        st.caption("Nombre de variantes qui retrouvent le brevet cible")
         st.bar_chart(
-            ranked_summary.set_index("méthode")["taux de réussite"],
+            ranked_summary.set_index("méthode")["requêtes trouvées"],
             use_container_width=True,
         )
     with chart_col_2:
-        st.caption(f"Taux de présence dans le top {max_rank_display}")
-        st.bar_chart(
-            ranked_summary.set_index("méthode")[f"taux top {max_rank_display}"],
-            use_container_width=True,
-        )
-
-    chart_col_3, chart_col_4 = st.columns(2, gap="large")
-    with chart_col_3:
-        st.caption("Rang moyen du brevet cible quand il est retrouvé (plus bas = meilleur)")
-        average_rank_series = ranked_summary.set_index("méthode")["rang moyen"].fillna(0)
-        st.bar_chart(average_rank_series, use_container_width=True)
-    with chart_col_4:
         st.caption("Nombre de méthodes qui retrouvent chaque variante")
         st.bar_chart(
             query_summary_df.set_index("requête")["méthodes qui trouvent"],
             use_container_width=True,
         )
 
-    st.subheader("Top des requêtes")
-    st.dataframe(
-        query_summary_df.sort_values(
-            ["méthodes qui trouvent", "meilleur rang"],
-            ascending=[False, True],
-        ),
-        hide_index=True,
-        use_container_width=True,
+    st.subheader("Rang moyen")
+    st.write(
+        "Le rang est la position du brevet cible dans la liste des résultats : "
+        "rang 1 veut dire premier résultat, rang 10 veut dire dixième résultat. "
+        "Le rang moyen est cette position moyenne sur les requêtes où le brevet a été retrouvé. "
+        "Plus il est bas, mieux c'est."
     )
+    average_rank_series = ranked_summary.set_index("méthode")["rang moyen"].fillna(0)
+    st.bar_chart(average_rank_series, use_container_width=True)
 
 
 def render_comparison_matrix(matrix_df, max_rank_display):
