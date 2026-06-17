@@ -3,28 +3,21 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Logigramme - Moteur de recherche textuel</title>
+  <title>Logigramme Mermaid.js - Moteur de recherche textuel</title>
   <style>
     :root {
-      --bg: #f5f7fa;
+      --bg: #f4f7fb;
       --paper: #ffffff;
       --ink: #17202a;
       --muted: #667085;
-      --line: #cfd8e3;
+      --line: #d5dee9;
       --accent: #0f766e;
-      --accent-dark: #115e59;
-      --accent-soft: #e7f5f2;
-      --side: #f8fafc;
-      --warning: #fff7ed;
-      --warning-ink: #9a3412;
+      --accent-2: #2563eb;
+      --warning: #9a3412;
     }
 
     * {
       box-sizing: border-box;
-    }
-
-    html {
-      scroll-behavior: smooth;
     }
 
     body {
@@ -35,17 +28,15 @@
       line-height: 1.55;
     }
 
-    header {
-      padding: 28px 18px 18px;
-      border-bottom: 1px solid var(--line);
-      background: var(--paper);
-    }
-
-    .header-inner,
+    header,
     main,
     footer {
-      width: min(920px, calc(100% - 32px));
+      width: min(1180px, calc(100% - 32px));
       margin: 0 auto;
+    }
+
+    header {
+      padding: 28px 0 18px;
     }
 
     .eyebrow {
@@ -58,15 +49,15 @@
     }
 
     h1 {
-      max-width: 780px;
+      max-width: 820px;
       margin: 0;
-      font-size: clamp(1.65rem, 4vw, 2.8rem);
+      font-size: clamp(1.7rem, 4vw, 3rem);
       line-height: 1.08;
       letter-spacing: 0;
     }
 
     header p {
-      max-width: 740px;
+      max-width: 820px;
       margin: 12px 0 0;
       color: var(--muted);
       font-size: 1rem;
@@ -86,167 +77,68 @@
       padding: 4px 9px;
       border: 1px solid var(--line);
       border-radius: 6px;
-      background: #f8fafc;
+      background: var(--paper);
       color: var(--muted);
       font-size: 0.84rem;
       font-weight: 700;
     }
 
     main {
-      padding: 26px 0 48px;
+      padding: 8px 0 48px;
     }
 
-    .intro {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 10px;
-      margin-bottom: 26px;
-    }
-
-    .summary-card {
-      min-height: 98px;
-      padding: 14px;
+    .panel {
+      margin-top: 18px;
+      padding: 18px;
       border: 1px solid var(--line);
       border-radius: 8px;
       background: var(--paper);
+      box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
     }
 
-    .summary-card strong {
-      display: block;
-      margin-bottom: 5px;
-      color: var(--accent-dark);
-      font-size: 0.95rem;
+    .diagram-panel {
+      overflow-x: auto;
     }
 
-    .summary-card span {
-      display: block;
-      color: var(--muted);
-      font-size: 0.92rem;
+    .mermaid {
+      min-width: 980px;
+      padding: 10px 6px;
     }
 
-    .flow {
-      position: relative;
-      display: grid;
-      justify-items: center;
-      gap: 0;
-    }
-
-    .node {
-      width: min(720px, 100%);
-    }
-
-    .step-card {
-      display: grid;
-      grid-template-columns: 190px 1fr;
-      overflow: hidden;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: var(--paper);
-      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
-    }
-
-    .step-title {
-      display: grid;
-      align-content: start;
-      gap: 10px;
-      min-height: 150px;
-      padding: 18px;
-      background: var(--accent-soft);
-      border-right: 1px solid var(--line);
-    }
-
-    .badge {
-      display: grid;
-      width: 38px;
-      height: 38px;
-      place-items: center;
-      border-radius: 6px;
-      background: var(--accent);
-      color: #ffffff;
-      font-weight: 900;
-    }
-
-    .step-title h2 {
-      margin: 0;
-      font-size: 1.05rem;
-      line-height: 1.2;
-      letter-spacing: 0;
-    }
-
-    .step-body {
-      display: grid;
-      grid-template-columns: 0.82fr 1.18fr;
-      gap: 0;
-    }
-
-    .goal,
-    .action {
-      padding: 18px;
-    }
-
-    .goal {
-      background: var(--side);
-      border-right: 1px solid var(--line);
-    }
-
-    .label {
-      display: block;
-      margin-bottom: 7px;
-      color: var(--accent-dark);
-      font-size: 0.76rem;
-      font-weight: 900;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
+    h2 {
+      margin: 0 0 10px;
+      font-size: 1.2rem;
+      line-height: 1.25;
     }
 
     p {
       margin: 0;
     }
 
-    .goal p,
-    .action p {
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .card {
+      min-height: 112px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #f8fafc;
+    }
+
+    .card strong {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--accent);
       font-size: 0.95rem;
     }
 
-    .connector {
-      width: 2px;
-      height: 30px;
-      background: var(--line);
-    }
-
-    .connector::after {
-      content: "";
-      display: block;
-      width: 10px;
-      height: 10px;
-      margin: 20px 0 0 -4px;
-      border-right: 2px solid var(--line);
-      border-bottom: 2px solid var(--line);
-      transform: rotate(45deg);
-      background: var(--bg);
-    }
-
-    .side-note {
-      width: min(720px, 100%);
-      margin: 28px auto 0;
-      padding: 18px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: var(--paper);
-    }
-
-    .side-note h2 {
-      margin: 0 0 10px;
-      font-size: 1.2rem;
-    }
-
-    .side-note ul {
-      margin: 0;
-      padding-left: 1.2rem;
-    }
-
-    li + li {
-      margin-top: 6px;
+    .card span {
+      color: var(--muted);
+      font-size: 0.93rem;
     }
 
     code {
@@ -257,25 +149,34 @@
       font-size: 0.92em;
     }
 
-    .command {
-      margin-top: 10px;
-      padding: 12px 14px;
+    pre {
+      overflow-x: auto;
+      margin: 10px 0 0;
+      padding: 14px;
       border-radius: 6px;
       background: #101828;
       color: #edf2f7;
-      overflow-x: auto;
       font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-      font-size: 0.9rem;
+      font-size: 0.92rem;
       line-height: 1.45;
     }
 
-    .warning {
-      margin-top: 14px;
+    ul {
+      margin: 0;
+      padding-left: 1.2rem;
+    }
+
+    li + li {
+      margin-top: 6px;
+    }
+
+    .note {
+      margin-top: 12px;
       padding: 12px 14px;
-      border-left: 4px solid var(--warning-ink);
+      border-left: 4px solid var(--warning);
       border-radius: 6px;
-      background: var(--warning);
-      color: var(--warning-ink);
+      background: #fff7ed;
+      color: var(--warning);
     }
 
     footer {
@@ -284,412 +185,306 @@
       font-size: 0.9rem;
     }
 
-    @media (max-width: 760px) {
-      .header-inner,
+    @media (max-width: 820px) {
+      header,
       main,
       footer {
-        width: min(100% - 24px, 920px);
+        width: min(100% - 24px, 1180px);
       }
 
-      .intro {
+      .grid {
         grid-template-columns: 1fr;
       }
 
-      .step-card {
-        grid-template-columns: 1fr;
-      }
-
-      .step-title {
-        min-height: auto;
-        border-right: 0;
-        border-bottom: 1px solid var(--line);
-      }
-
-      .step-body {
-        grid-template-columns: 1fr;
-      }
-
-      .goal {
-        border-right: 0;
-        border-bottom: 1px solid var(--line);
+      .panel {
+        padding: 14px;
       }
     }
   </style>
 </head>
 <body>
   <header>
-    <div class="header-inner">
-      <p class="eyebrow">Logigramme du projet</p>
-      <h1>Mise en place du moteur de recherche textuel</h1>
-      <p>
-        Une lecture en colonne du pipeline : chaque bloc correspond à une étape réelle du projet,
-        avec son intention à gauche et ce qui a été fait à droite.
-      </p>
-      <div class="meta" aria-label="Métadonnées">
-        <span class="pill">Mise à jour : 16 juin 2026</span>
-        <span class="pill">Format : logigramme</span>
-        <span class="pill">Projet : moteur de recherche de brevets</span>
-      </div>
+    <p class="eyebrow">Documentation visuelle</p>
+    <h1>Logigramme du moteur de recherche textuel</h1>
+    <p>
+      Ce schéma montre la logique complète du projet : comment les brevets sont préparés,
+      comment l'index est construit, comment une requête est traitée, puis comment les méthodes
+      sont comparées dans l'interface Streamlit.
+    </p>
+    <div class="meta" aria-label="Métadonnées">
+      <span class="pill">Mermaid.js</span>
+      <span class="pill">Mise à jour : 17 juin 2026</span>
+      <span class="pill">Projet : text-search-engine-m1</span>
     </div>
   </header>
 
   <main>
-    <section class="intro" aria-label="Résumé">
-      <div class="summary-card">
-        <strong>Entrée</strong>
-        <span>Un CSV de brevets contenant notamment les titres et abstracts.</span>
-      </div>
-      <div class="summary-card">
-        <strong>Traitement</strong>
-        <span>Nettoyage, index inversé, scoring TF-IDF, BM25 et variantes WordNet.</span>
-      </div>
-      <div class="summary-card">
-        <strong>Évaluation</strong>
-        <span>Comparaison top 10, temps moyen, familles de requêtes et requêtes à surveiller.</span>
-      </div>
-      <div class="summary-card">
-        <strong>Sortie</strong>
-        <span>Une interface Streamlit pour chercher, comparer et générer une lecture rapide.</span>
+    <section class="panel diagram-panel" aria-label="Logigramme principal">
+      <pre class="mermaid">
+flowchart TD
+  A(["Départ<br/>Dataset de brevets"])
+  B["Charger le CSV<br/>Fichier data/patent_analysis_data.csv"]
+  C{"Le brevet contient<br/>un titre ou un abstract ?"}
+  D["Ignorer la ligne<br/>Document non indexable"]
+  E["Créer un document<br/>doc_id, métadonnées et texte de recherche"]
+  F["Construire le texte indexé<br/>Title + Abstract"]
+
+  G["Nettoyer le texte<br/>minuscules, ponctuation, découpage en mots"]
+  H["Construire l'index inversé<br/>terme vers doc_id et fréquence"]
+  I["Calculer les longueurs<br/>taille de chaque document et moyenne"]
+  J{"WordNet disponible ?"}
+  K["Construire aussi<br/>l'index lemmatisé"]
+  L["Réutiliser l'index brut<br/>mode dégradé mais fonctionnel"]
+
+  M(["Utilisateur<br/>saisit une requête"])
+  N["Nettoyer la requête<br/>même normalisation que les documents"]
+  O{"Méthode choisie ?"}
+
+  P["TF-IDF pur<br/>requête AND sur mots exacts"]
+  Q["BM25 pur<br/>requête AND et longueur des documents"]
+  R["TF-IDF lemmatisé<br/>requête et index en lemmes"]
+  S["BM25 lemmatisé<br/>BM25 sur index lemmatisé"]
+  T["TF-IDF synonymes<br/>groupes de termes équivalents"]
+  U["BM25 synonymes<br/>synonymes et normalisation BM25"]
+
+  V["Filtrer les candidats<br/>tous les mots ou groupes doivent être présents"]
+  W{"Des documents<br/>correspondent ?"}
+  X["Afficher aucun résultat<br/>requête trop restrictive ou terme absent"]
+  Y["Calculer les scores<br/>TF-IDF ou BM25 selon la méthode"]
+  Z["Trier par pertinence<br/>score décroissant"]
+  AA["Afficher les résultats<br/>rang, score, brevet, titre, abstract, lien"]
+
+  AB(["Onglet Comparaison"])
+  AC["Choisir un brevet cible<br/>titre exact ou partiel"]
+  AD["Tester plusieurs requêtes<br/>casse, ordre, pluriels, synonymes, requêtes larges"]
+  AE["Exécuter les 6 méthodes<br/>TF-IDF, BM25, synonymes, lemmatisation"]
+  AF["Mesurer chaque essai<br/>rang, score, trouvé ou non, temps en ms"]
+  AG["Classer les requêtes<br/>exacte, ordre, grammaire, sémantique, large, bruitée"]
+  AH["Calculer les métriques<br/>taux de réussite, top 10, rang moyen, temps moyen"]
+  AI["Repérer les requêtes à surveiller<br/>échecs, bruit, gain réel des synonymes"]
+  AJ["Produire la conclusion automatique<br/>meilleur compromis et point de vigilance"]
+  AK(["Fin<br/>Méthode recommandée et résultats interprétables"])
+
+  A --> B --> C
+  C -- Non --> D
+  C -- Oui --> E --> F --> G --> H --> I --> J
+  J -- Oui --> K
+  J -- Non --> L
+  K --> M
+  L --> M
+
+  M --> N --> O
+  O --> P
+  O --> Q
+  O --> R
+  O --> S
+  O --> T
+  O --> U
+
+  P --> V
+  Q --> V
+  R --> V
+  S --> V
+  T --> V
+  U --> V
+
+  V --> W
+  W -- Non --> X
+  W -- Oui --> Y --> Z --> AA
+
+  AA --> AB
+  AB --> AC --> AD --> AE --> AF --> AG --> AH --> AI --> AJ --> AK
+
+  classDef data fill:#e0f2fe,stroke:#2563eb,stroke-width:1.5px,color:#17202a;
+  classDef index fill:#e7f5f2,stroke:#0f766e,stroke-width:1.5px,color:#17202a;
+  classDef query fill:#fef3c7,stroke:#d97706,stroke-width:1.5px,color:#17202a;
+  classDef result fill:#ede9fe,stroke:#7c3aed,stroke-width:1.5px,color:#17202a;
+  classDef decision fill:#ffffff,stroke:#475467,stroke-width:1.5px,color:#17202a;
+  classDef stop fill:#fee2e2,stroke:#dc2626,stroke-width:1.5px,color:#17202a;
+
+  class A,B,C,D,E,F data;
+  class G,H,I,J,K,L index;
+  class M,N,O,P,Q,R,S,T,U,V,W query;
+  class Y,Z,AA,AB,AC,AD,AE,AF,AG,AH,AI,AJ,AK result;
+  class C,J,O,W decision;
+  class D,X stop;
+      </pre>
+    </section>
+
+    <section class="panel">
+      <h2>Lecture du logigramme</h2>
+      <div class="grid">
+        <div class="card">
+          <strong>1. Préparer les brevets</strong>
+          <span>Le CSV est chargé, les lignes sans texte sont ignorées, puis chaque brevet devient un document indexable avec un <code>doc_id</code>.</span>
+        </div>
+        <div class="card">
+          <strong>2. Construire l'index</strong>
+          <span>Le moteur nettoie les mots, construit l'index inversé et calcule les tailles utiles pour TF-IDF, BM25 et la lemmatisation.</span>
+        </div>
+        <div class="card">
+          <strong>3. Traiter la requête</strong>
+          <span>La requête passe par la même normalisation, puis elle part vers une des six méthodes de recherche disponibles.</span>
+        </div>
+        <div class="card">
+          <strong>4. Filtrer les candidats</strong>
+          <span>La logique reste restrictive : un document doit contenir tous les mots demandés, ou au moins un terme de chaque groupe de synonymes.</span>
+        </div>
+        <div class="card">
+          <strong>5. Classer les résultats</strong>
+          <span>Les candidats sont scorés avec TF-IDF ou BM25, puis triés par pertinence décroissante avant affichage.</span>
+        </div>
+        <div class="card">
+          <strong>6. Comparer les méthodes</strong>
+          <span>Le dashboard teste plusieurs formulations et produit une synthèse : réussite, top 10, rang moyen, temps moyen et conclusion automatique.</span>
+        </div>
       </div>
     </section>
 
-    <section class="flow" aria-label="Logigramme des étapes">
-      <article class="node">
-        <div class="step-card">
-          <div class="step-title">
-            <span class="badge">01</span>
-            <h2>Choisir le corpus</h2>
-          </div>
-          <div class="step-body">
-            <div class="goal">
-              <span class="label">Objectif</span>
-              <p>Partir d'une base documentaire assez riche pour tester une recherche textuelle.</p>
-            </div>
-            <div class="action">
-              <span class="label">Ce qui est fait</span>
-              <p>Le projet utilise un dataset Kaggle de brevets de santé. Les colonnes utiles sont surtout <code>Title</code> et <code>Abstract</code>.</p>
-            </div>
-          </div>
-        </div>
-      </article>
-      <div class="connector" aria-hidden="true"></div>
-
-      <article class="node">
-        <div class="step-card">
-          <div class="step-title">
-            <span class="badge">02</span>
-            <h2>Nettoyer les données</h2>
-          </div>
-          <div class="step-body">
-            <div class="goal">
-              <span class="label">Objectif</span>
-              <p>Éviter d'indexer des textes vides, absents ou inutilisables.</p>
-            </div>
-            <div class="action">
-              <span class="label">Ce qui est fait</span>
-              <p><code>cleaner.py</code> lit le CSV par lots, retire les abstracts manquants et conserve les textes détectés comme anglais avec <code>langdetect</code>.</p>
-            </div>
-          </div>
-        </div>
-      </article>
-      <div class="connector" aria-hidden="true"></div>
-
-      <article class="node">
-        <div class="step-card">
-          <div class="step-title">
-            <span class="badge">03</span>
-            <h2>Créer les documents</h2>
-          </div>
-          <div class="step-body">
-            <div class="goal">
-              <span class="label">Objectif</span>
-              <p>Transformer chaque brevet en élément simple à indexer et à retrouver.</p>
-            </div>
-            <div class="action">
-              <span class="label">Ce qui est fait</span>
-              <p>Dans <code>main.py</code>, chaque brevet reçoit un <code>doc_id</code>. Le texte indexé est construit par <code>build_search_text</code> avec les colonnes <code>Title</code> et <code>Abstract</code>.</p>
-            </div>
-          </div>
-        </div>
-      </article>
-      <div class="connector" aria-hidden="true"></div>
-
-      <article class="node">
-        <div class="step-card">
-          <div class="step-title">
-            <span class="badge">04</span>
-            <h2>Normaliser le texte</h2>
-          </div>
-          <div class="step-body">
-            <div class="goal">
-              <span class="label">Objectif</span>
-              <p>Faire en sorte que les mêmes mots soient reconnus malgré la casse ou la ponctuation.</p>
-            </div>
-            <div class="action">
-              <span class="label">Ce qui est fait</span>
-              <p><code>_nettoyer_texte</code> passe le texte en minuscules, remplace la ponctuation par des espaces, puis découpe le texte en mots.</p>
-            </div>
-          </div>
-        </div>
-      </article>
-      <div class="connector" aria-hidden="true"></div>
-
-      <article class="node">
-        <div class="step-card">
-          <div class="step-title">
-            <span class="badge">05</span>
-            <h2>Construire l'index inversé</h2>
-          </div>
-          <div class="step-body">
-            <div class="goal">
-              <span class="label">Objectif</span>
-              <p>Retrouver rapidement les documents contenant un mot sans parcourir tout le corpus.</p>
-            </div>
-            <div class="action">
-              <span class="label">Ce qui est fait</span>
-              <p><code>indexer_corpus</code> stocke pour chaque terme une liste de couples <code>(doc_id, fréquence)</code>. Le moteur garde aussi la taille de chaque document et calcule la longueur moyenne du corpus.</p>
-            </div>
-          </div>
-        </div>
-      </article>
-      <div class="connector" aria-hidden="true"></div>
-
-      <article class="node">
-        <div class="step-card">
-          <div class="step-title">
-            <span class="badge">06</span>
-            <h2>Filtrer les candidats</h2>
-          </div>
-          <div class="step-body">
-            <div class="goal">
-              <span class="label">Objectif</span>
-              <p>Garder uniquement les documents qui correspondent à tous les mots de la requête.</p>
-            </div>
-            <div class="action">
-              <span class="label">Ce qui est fait</span>
-              <p><code>requete_and</code> intersecte les listes de documents des mots demandés avec un algorithme à deux pointeurs.</p>
-            </div>
-          </div>
-        </div>
-      </article>
-      <div class="connector" aria-hidden="true"></div>
-
-      <article class="node">
-        <div class="step-card">
-          <div class="step-title">
-            <span class="badge">07</span>
-            <h2>Classer avec TF-IDF</h2>
-          </div>
-          <div class="step-body">
-            <div class="goal">
-              <span class="label">Objectif</span>
-              <p>Mettre en premier les documents où les mots de la requête sont importants.</p>
-            </div>
-            <div class="action">
-              <span class="label">Ce qui est fait</span>
-              <p><code>chercher_tfidf</code> combine la fréquence du mot dans le document avec sa rareté dans le corpus, puis trie les résultats par score décroissant.</p>
-            </div>
-          </div>
-        </div>
-      </article>
-      <div class="connector" aria-hidden="true"></div>
-
-      <article class="node">
-        <div class="step-card">
-          <div class="step-title">
-            <span class="badge">08</span>
-            <h2>Classer avec BM25</h2>
-          </div>
-          <div class="step-body">
-            <div class="goal">
-              <span class="label">Objectif</span>
-              <p>Obtenir un classement plus robuste pour des documents de longueurs différentes.</p>
-            </div>
-            <div class="action">
-              <span class="label">Ce qui est fait</span>
-              <p><code>chercher_bm25</code> ajoute une saturation de fréquence et une normalisation par longueur. Les paramètres utilisés sont <code>k1 = 1.5</code> et <code>b = 0.75</code>.</p>
-            </div>
-          </div>
-        </div>
-      </article>
-      <div class="connector" aria-hidden="true"></div>
-
-      <article class="node">
-        <div class="step-card">
-          <div class="step-title">
-            <span class="badge">09</span>
-            <h2>Lemmatiser</h2>
-          </div>
-          <div class="step-body">
-            <div class="goal">
-              <span class="label">Objectif</span>
-              <p>Rapprocher des formes comme <code>robot</code>, <code>robots</code>, <code>clean</code> et <code>cleaning</code>.</p>
-            </div>
-            <div class="action">
-              <span class="label">Ce qui est fait</span>
-              <p>Le moteur construit un index lemmatisé avec WordNet. Si la ressource manque, il revient automatiquement à l'index classique.</p>
-            </div>
-          </div>
-        </div>
-      </article>
-      <div class="connector" aria-hidden="true"></div>
-
-      <article class="node">
-        <div class="step-card">
-          <div class="step-title">
-            <span class="badge">10</span>
-            <h2>Ajouter les synonymes</h2>
-          </div>
-          <div class="step-body">
-            <div class="goal">
-              <span class="label">Objectif</span>
-              <p>Retrouver un brevet même si la requête emploie un vocabulaire proche mais différent.</p>
-            </div>
-            <div class="action">
-              <span class="label">Ce qui est fait</span>
-              <p>Les synonymes WordNet sont ajoutés côté requête. Chaque mot devient un petit groupe de termes équivalents, puis le moteur score le meilleur terme du groupe.</p>
-            </div>
-          </div>
-        </div>
-      </article>
-      <div class="connector" aria-hidden="true"></div>
-
-      <article class="node">
-        <div class="step-card">
-          <div class="step-title">
-            <span class="badge">11</span>
-            <h2>Créer l'interface</h2>
-          </div>
-          <div class="step-body">
-            <div class="goal">
-              <span class="label">Objectif</span>
-              <p>Permettre d'utiliser le moteur sans manipuler directement le code Python.</p>
-            </div>
-            <div class="action">
-              <span class="label">Ce qui est fait</span>
-              <p><code>main.py</code> fournit une application Streamlit avec des onglets pour TF-IDF, BM25, synonymes, lemmatisation et résultats détaillés.</p>
-            </div>
-          </div>
-        </div>
-      </article>
-      <div class="connector" aria-hidden="true"></div>
-
-      <article class="node">
-        <div class="step-card">
-          <div class="step-title">
-            <span class="badge">12</span>
-            <h2>Comparer les méthodes</h2>
-          </div>
-          <div class="step-body">
-            <div class="goal">
-              <span class="label">Objectif</span>
-              <p>Mesurer quelle méthode retrouve le mieux un brevet cible selon plusieurs formulations.</p>
-            </div>
-            <div class="action">
-              <span class="label">Ce qui est fait</span>
-              <p>Le dashboard teste des variantes de requête, calcule le rang du brevet cible, le taux de réussite, la présence dans le top choisi et une synthèse fixe en top 10.</p>
-            </div>
-          </div>
-        </div>
-      </article>
-      <div class="connector" aria-hidden="true"></div>
-
-      <article class="node">
-        <div class="step-card">
-          <div class="step-title">
-            <span class="badge">13</span>
-            <h2>Mesurer les performances</h2>
-          </div>
-          <div class="step-body">
-            <div class="goal">
-              <span class="label">Objectif</span>
-              <p>Comparer les méthodes avec des indicateurs lisibles, pas seulement avec des scores internes.</p>
-            </div>
-            <div class="action">
-              <span class="label">Ce qui est fait</span>
-              <p><code>build_comparison_dataframe</code> mesure le temps de chaque recherche avec <code>time.perf_counter</code>, puis le résumé affiche taux de réussite, taux top 10, rang moyen et temps moyen.</p>
-            </div>
-          </div>
-        </div>
-      </article>
-      <div class="connector" aria-hidden="true"></div>
-
-      <article class="node">
-        <div class="step-card">
-          <div class="step-title">
-            <span class="badge">14</span>
-            <h2>Classer les requêtes</h2>
-          </div>
-          <div class="step-body">
-            <div class="goal">
-              <span class="label">Objectif</span>
-              <p>Comprendre pourquoi une méthode réussit ou échoue selon le type de formulation.</p>
-            </div>
-            <div class="action">
-              <span class="label">Ce qui est fait</span>
-              <p><code>classify_query_family</code> range les requêtes en familles : exacte, ordre des mots, pluriel, reformulation sémantique, requête large ou requête bruitée.</p>
-            </div>
-          </div>
-        </div>
-      </article>
-      <div class="connector" aria-hidden="true"></div>
-
-      <article class="node">
-        <div class="step-card">
-          <div class="step-title">
-            <span class="badge">15</span>
-            <h2>Produire une conclusion</h2>
-          </div>
-          <div class="step-body">
-            <div class="goal">
-              <span class="label">Objectif</span>
-              <p>Aider à choisir une méthode en donnant une lecture métier rapide du dashboard.</p>
-            </div>
-            <div class="action">
-              <span class="label">Ce qui est fait</span>
-              <p>Le dashboard classe les méthodes par réussite, top 10, rang moyen et temps moyen. Il ajoute une lecture rapide, une pénalité de bruit et une conclusion automatique.</p>
-            </div>
-          </div>
-        </div>
-      </article>
-    </section>
-
-    <section class="side-note">
-      <h2>Commandes utiles</h2>
-      <p>Installer les dépendances, télécharger WordNet, puis lancer l'application Streamlit.</p>
-      <div class="command">pip install -r requirements.txt
-python -m nltk.downloader wordnet
-python -m nltk.downloader omw-1.4
-python3 -m streamlit run main.py</div>
-      <div class="warning">
-        L'application attend le fichier <code>data/patent_analysis_data.csv</code>. Si le fichier n'est pas présent, il faut placer le CSV nettoyé à cet emplacement.
-      </div>
-    </section>
-
-    <section class="side-note">
-      <h2>Métriques du dashboard</h2>
+    <section class="panel">
+      <h2>Métriques utilisées dans la comparaison</h2>
       <ul>
         <li><code>Taux de réussite</code> : part des requêtes où le brevet cible est retrouvé.</li>
         <li><code>Taux top 10</code> : part des requêtes où le brevet cible apparaît dans les 10 premiers résultats.</li>
-        <li><code>Rang moyen</code> : position moyenne du brevet quand il est retrouvé ; plus c'est bas, mieux c'est.</li>
-        <li><code>Temps moyen</code> : durée moyenne d'une recherche pour une méthode.</li>
-        <li><code>Pénalité bruit</code> : signal d'alerte quand les synonymes ou requêtes larges peuvent favoriser des résultats moins spécifiques.</li>
+        <li><code>Rang moyen</code> : position moyenne du brevet lorsqu'il est retrouvé ; plus le nombre est faible, meilleur est le classement.</li>
+        <li><code>Temps moyen</code> : durée moyenne d'exécution d'une requête pour une méthode donnée.</li>
+        <li><code>Pénalité bruit</code> : alerte pédagogique lorsque des requêtes larges ou discutables peuvent produire des résultats moins spécifiques.</li>
       </ul>
     </section>
 
-    <section class="side-note">
-      <h2>Fichiers importants</h2>
-      <ul>
-        <li><code>src/lib/MoteurRechercheTextuel.py</code> : logique du moteur de recherche.</li>
-        <li><code>src/lib/cleaner.py</code> : nettoyage et filtrage du CSV.</li>
-        <li><code>main.py</code> : interface Streamlit et dashboard de comparaison.</li>
-        <li><code>src/exemple/</code> : notebooks d'exemples et d'expérimentation.</li>
-      </ul>
+    <section class="panel diagram-panel" aria-label="Logigramme des fonctions">
+      <h2>Enchaînement des fonctions</h2>
+      <p>
+        Ce deuxième logigramme descend d'un niveau : il ne décrit plus seulement la logique métier,
+        il montre les principales fonctions appelées dans le code pour faire fonctionner l'application.
+      </p>
+      <pre class="mermaid">
+flowchart TD
+  A(["main()"])
+  B["st.set_page_config()<br/>Prépare la page Streamlit"]
+  C["st.tabs()<br/>Crée les onglets de recherche et comparaison"]
+
+  D{"Onglet ouvert ?"}
+
+  E["render_tfidf_tab()<br/>Recherche TF-IDF pure"]
+  F["render_bm25_tab()<br/>Recherche BM25 pure"]
+  G["render_tfidf_synonyms_tab()<br/>TF-IDF + synonymes"]
+  H["render_bm25_synonyms_tab()<br/>BM25 + synonymes"]
+  I["render_tfidf_lemmatization_tab()<br/>TF-IDF + lemmatisation"]
+  J["render_bm25_lemmatization_tab()<br/>BM25 + lemmatisation"]
+
+  K["render_search_tab()<br/>Fonction commune aux 6 onglets"]
+  L["count_searchable_patents()<br/>Compte les brevets exploitables"]
+  M["load_patents(max_documents)<br/>Charge les lignes du CSV"]
+  N["build_search_text(row)<br/>Assemble Title + Abstract"]
+  O["build_search_engine(patents)<br/>Crée le moteur"]
+  P["MoteurRechercheTextuel.indexer_corpus()<br/>Construit l'index inversé"]
+
+  Q["search_callback(moteur, query)<br/>Appelle la méthode choisie"]
+  R{"Méthode du moteur ?"}
+  S["chercher_tfidf()<br/>AND + score TF-IDF"]
+  T["chercher_bm25()<br/>AND + score BM25"]
+  U["chercher_tfidf_synonymes()<br/>Groupes WordNet + TF-IDF"]
+  V["chercher_bm25_synonymes()<br/>Groupes WordNet + BM25"]
+  W["chercher_tfidf_lemmatise()<br/>Index lemmatisé + TF-IDF"]
+  X["chercher_bm25_lemmatise()<br/>Index lemmatisé + BM25"]
+
+  Y["render_results()<br/>Affiche tableau et détails des brevets"]
+
+  Z["render_comparison_tab()<br/>Dashboard de comparaison"]
+  AA["find_patent_doc_id()<br/>Retrouve le brevet cible"]
+  AB["build_comparison_dataframe()<br/>Teste toutes les requêtes sur toutes les méthodes"]
+  AC["classify_query_family()<br/>Classe la famille de chaque requête"]
+  AD["find_result_rank_and_score()<br/>Récupère rang et score du brevet cible"]
+  AE["build_comparison_summary()<br/>Calcule réussite, top N, rang moyen, temps moyen"]
+  AF["enrich_comparison_summary()<br/>Ajoute pénalité bruit et vigilance"]
+  AG["build_family_matrix()<br/>Analyse par famille de requêtes"]
+  AH["build_problematic_queries()<br/>Repère les requêtes à surveiller"]
+  AI["render_comparison_dashboard()<br/>Affiche synthèse, graphiques, détails"]
+  AJ["build_automatic_conclusion()<br/>Produit la conclusion automatique"]
+
+  A --> B --> C --> D
+
+  D -- "Recherche simple" --> E
+  D -- "Recherche simple" --> F
+  D -- "Recherche simple" --> G
+  D -- "Recherche simple" --> H
+  D -- "Recherche simple" --> I
+  D -- "Recherche simple" --> J
+
+  E --> K
+  F --> K
+  G --> K
+  H --> K
+  I --> K
+  J --> K
+
+  K --> L --> M --> N --> O --> P --> Q --> R
+  R --> S
+  R --> T
+  R --> U
+  R --> V
+  R --> W
+  R --> X
+  S --> Y
+  T --> Y
+  U --> Y
+  V --> Y
+  W --> Y
+  X --> Y
+
+  D -- "Comparaison" --> Z
+  Z --> L
+  Z --> M
+  Z --> O
+  Z --> AA --> AB
+  AB --> AC
+  AB --> Q
+  AB --> AD
+  AD --> AE --> AF --> AG --> AH --> AI --> AJ
+
+  classDef streamlit fill:#e0f2fe,stroke:#2563eb,stroke-width:1.5px,color:#17202a;
+  classDef load fill:#e7f5f2,stroke:#0f766e,stroke-width:1.5px,color:#17202a;
+  classDef engine fill:#fef3c7,stroke:#d97706,stroke-width:1.5px,color:#17202a;
+  classDef compare fill:#ede9fe,stroke:#7c3aed,stroke-width:1.5px,color:#17202a;
+  classDef decision fill:#ffffff,stroke:#475467,stroke-width:1.5px,color:#17202a;
+
+  class A,B,C,D,E,F,G,H,I,J,K,Z,AI streamlit;
+  class L,M,N,O load;
+  class P,Q,R,S,T,U,V,W,X,Y engine;
+  class AA,AB,AC,AD,AE,AF,AG,AH,AJ compare;
+  class D,R decision;
+      </pre>
     </section>
   </main>
 
   <footer>
-    Documentation construite à partir du code du projet : README, moteur Python, nettoyage CSV et interface Streamlit.
+    Documentation construite à partir de <code>README.md</code>, <code>main.py</code>,
+    <code>src/lib/MoteurRechercheTextuel.py</code> et <code>src/lib/cleaner.py</code>.
   </footer>
+
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs";
+
+    mermaid.initialize({
+      startOnLoad: true,
+      securityLevel: "strict",
+      theme: "base",
+      flowchart: {
+        curve: "basis",
+        htmlLabels: true,
+        nodeSpacing: 42,
+        rankSpacing: 48
+      },
+      themeVariables: {
+        fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
+        primaryColor: "#e7f5f2",
+        primaryBorderColor: "#0f766e",
+        primaryTextColor: "#17202a",
+        lineColor: "#98a2b3",
+        textColor: "#17202a"
+      }
+    });
+  </script>
 </body>
 </html>
