@@ -1,4 +1,5 @@
 import csv
+import math
 import re
 import sys
 import time
@@ -131,6 +132,7 @@ def render_tfidf_tab():
             "Score : score TF-IDF calculé pour la requête ; plus il est élevé, "
             "plus le document contient fortement les termes recherchés."
         ),
+        tfidf_breakdown_variant="pure",
     )
 
 
@@ -144,6 +146,7 @@ def render_tfidf_synonyms_tab():
             "chaque mot peut être retrouvé via lui-même, son lemme ou un synonyme."
         ),
         requires_wordnet=True,
+        tfidf_breakdown_variant="synonyms",
     )
 
 
@@ -151,12 +154,13 @@ def render_bm25_synonyms_tab():
     render_search_tab(
         method_key="bm25_synonyms",
         score_name="BM25 + synonymes",
-        search_callback=lambda moteur, query: moteur.chercher_bm25_synonymes(query),
+        search_callback=lambda moteur, query, k1, b: moteur.chercher_bm25_synonymes(query, k1=k1, b=b),
         score_description=(
             "Score : score BM25 calculé après enrichissement de la requête avec WordNet ; "
             "chaque mot peut être retrouvé via lui-même, son lemme ou un synonyme."
         ),
         requires_wordnet=True,
+        bm25_breakdown_variant="synonyms",
     )
 
 
@@ -170,6 +174,7 @@ def render_tfidf_lemmatization_tab():
             "par exemple, des variantes comme robots et robot sont rapprochées."
         ),
         requires_wordnet=True,
+        tfidf_breakdown_variant="lemmatization",
     )
 
 
@@ -177,12 +182,13 @@ def render_bm25_lemmatization_tab():
     render_search_tab(
         method_key="bm25_lemmatization",
         score_name="BM25 + lemmatisation",
-        search_callback=lambda moteur, query: moteur.chercher_bm25_lemmatise(query),
+        search_callback=lambda moteur, query, k1, b: moteur.chercher_bm25_lemmatise(query, k1=k1, b=b),
         score_description=(
             "Score : score BM25 calculé après normalisation des formes fléchies ; "
             "il tient aussi compte de la fréquence des termes et de la longueur du document."
         ),
         requires_wordnet=True,
+        bm25_breakdown_variant="lemmatization",
     )
 
 
@@ -190,11 +196,12 @@ def render_bm25_tab():
     render_search_tab(
         method_key="bm25",
         score_name="BM25",
-        search_callback=lambda moteur, query: moteur.chercher_bm25(query),
+        search_callback=lambda moteur, query, k1, b: moteur.chercher_bm25(query, k1=k1, b=b),
         score_description=(
             "Score : score BM25 calculé pour la requête ; plus il est élevé, "
             "plus le document est pertinent en tenant compte de la fréquence des termes et de la longueur du document."
         ),
+        bm25_breakdown_variant="pure",
     )
 
 
@@ -285,6 +292,7 @@ def render_comparison_tab():
     top10_summary_df = enrich_comparison_summary(top10_summary_df, comparison_df, VISIBILITY_TOP_RANK)
     matrix_df = build_presence_matrix(comparison_df, max_rank_display)
     family_matrix_df = build_family_matrix(comparison_df, VISIBILITY_TOP_RANK)
+    quality_df = build_quality_metrics(comparison_df, VISIBILITY_TOP_RANK)
     problematic_queries = build_problematic_queries(comparison_df)
 
     render_comparison_dashboard(
@@ -292,6 +300,7 @@ def render_comparison_tab():
         summary_df,
         comparison_df,
         family_matrix_df,
+        quality_df,
         problematic_queries,
         matrix_df,
         max_rank_display,
@@ -304,6 +313,8 @@ def render_search_tab(
     search_callback,
     score_description,
     requires_wordnet=False,
+    tfidf_breakdown_variant=None,
+    bm25_breakdown_variant=None,
 ):
     controls_col, results_col = st.columns([0.28, 0.72], gap="large")
     total_documents = count_searchable_patents()
@@ -327,6 +338,33 @@ def render_search_tab(
             step=5,
             key=f"{method_key}_max_results",
         )
+        bm25_k1 = 1.5
+        bm25_b = 0.75
+        if bm25_breakdown_variant is not None:
+            bm25_k1 = st.slider(
+                "BM25 k1",
+                min_value=0.2,
+                max_value=3.0,
+                value=1.5,
+                step=0.1,
+                key=f"{method_key}_bm25_k1",
+                help=(
+                    "Contrôle la saturation de la fréquence d'un terme. "
+                    "Plus k1 est élevé, plus les répétitions d'un mot peuvent augmenter le score."
+                ),
+            )
+            bm25_b = st.slider(
+                "BM25 b",
+                min_value=0.0,
+                max_value=1.0,
+                value=0.75,
+                step=0.05,
+                key=f"{method_key}_bm25_b",
+                help=(
+                    "Contrôle la correction liée à la longueur du document. "
+                    "0 désactive cette correction, 1 l'applique fortement."
+                ),
+            )
 
     patents = load_patents(max_documents)
     moteur = build_search_engine(patents)
@@ -353,7 +391,10 @@ def render_search_tab(
             render_empty_state(patents, score_name)
             return
 
-        results = search_callback(moteur, query)
+        if bm25_breakdown_variant is not None:
+            results = search_callback(moteur, query, bm25_k1, bm25_b)
+        else:
+            results = search_callback(moteur, query)
         st.caption(f"{len(results)} résultat(s) trouvé(s)")
 
         if not results:
@@ -364,6 +405,24 @@ def render_search_tab(
             "Rang : position du résultat après tri par pertinence. "
             f"{score_description}"
         )
+        if tfidf_breakdown_variant is not None:
+            render_tfidf_score_breakdown(
+                moteur,
+                query,
+                results[0],
+                patents,
+                tfidf_breakdown_variant,
+            )
+        if bm25_breakdown_variant is not None:
+            render_bm25_score_breakdown(
+                moteur,
+                query,
+                results[0],
+                patents,
+                bm25_breakdown_variant,
+                bm25_k1,
+                bm25_b,
+            )
         render_results(results[:max_results], patents)
 
 
@@ -414,6 +473,212 @@ def render_results(results, patents):
             if patent["result_link"]:
                 st.link_button("Ouvrir le brevet", patent["result_link"])
             st.write(patent["abstract"])
+
+
+def render_tfidf_score_breakdown(moteur, query, first_result, patents, variant):
+    doc_id, score = first_result
+    breakdown_df = build_tfidf_breakdown(moteur, query, doc_id, variant)
+
+    if breakdown_df.empty:
+        return
+
+    patent_title = patents[doc_id]["title"] or f"Doc {doc_id}"
+    st.subheader("Décomposition du score TF-IDF")
+    st.caption(
+        "Lecture du premier résultat uniquement, pour éviter de ralentir l'onglet. "
+        "TF mesure la fréquence du mot dans ce document, IDF mesure la rareté du mot dans le corpus, "
+        "et TF-IDF = TF × IDF. Le score total TF-IDF est la somme des contributions."
+    )
+    st.metric(
+        "Score total TF-IDF du premier résultat",
+        f"{score:.6f}",
+        help="Somme des contributions TF × IDF des termes de la requête pour le document classé premier.",
+    )
+    st.caption(f"Document analysé : {patent_title}")
+
+    st.dataframe(breakdown_df, hide_index=True, use_container_width=True)
+
+
+def build_tfidf_breakdown(moteur, query, doc_id, variant):
+    groupes_termes, index, tailles_documents = get_tfidf_breakdown_context(
+        moteur,
+        query,
+        variant,
+    )
+    taille_doc = tailles_documents.get(doc_id, 0)
+    if taille_doc == 0:
+        return pd.DataFrame()
+
+    rows = []
+    for groupe in groupes_termes:
+        best_row = build_best_tfidf_group_row(moteur, groupe, doc_id, index, taille_doc)
+        if best_row is not None:
+            rows.append(best_row)
+
+    return pd.DataFrame(rows)
+
+
+def get_tfidf_breakdown_context(moteur, query, variant):
+    if variant == "synonyms":
+        index, tailles_documents, _ = moteur._obtenir_index_lemmatise()
+        groupes_termes = moteur._groupes_termes_synonymes(query)
+    elif variant == "lemmatization":
+        index, tailles_documents, _ = moteur._obtenir_index_lemmatise()
+        groupes_termes = moteur._groupes_termes_lemmatises(query)
+    else:
+        index = moteur.index
+        tailles_documents = moteur.tailles_documents
+        groupes_termes = [
+            [mot]
+            for mot in moteur._nettoyer_texte(query)
+        ]
+
+    return groupes_termes, index, tailles_documents
+
+
+def build_best_tfidf_group_row(moteur, groupe, doc_id, index, taille_doc):
+    best_row = None
+
+    for terme in groupe:
+        frequence_brute = moteur._frequence_terme_document(terme, doc_id, index)
+        idf = moteur._calculer_idf_depuis_index(terme, index)
+        tf = frequence_brute / taille_doc if taille_doc else 0.0
+        contribution = tf * idf
+        row = {
+            "terme affiché": terme,
+            "termes équivalents testés": ", ".join(groupe),
+            "fréquence brute": frequence_brute,
+            "TF": round(tf, 6),
+            "IDF": round(idf, 6),
+            "Contribution TF-IDF": round(contribution, 6),
+        }
+
+        if best_row is None or row["Contribution TF-IDF"] > best_row["Contribution TF-IDF"]:
+            best_row = row
+
+    return best_row
+
+
+def render_bm25_score_breakdown(moteur, query, first_result, patents, variant, k1, b):
+    doc_id, score = first_result
+    breakdown_df = build_bm25_breakdown(moteur, query, doc_id, variant, k1=k1, b=b)
+
+    if breakdown_df.empty:
+        return
+
+    patent_title = patents[doc_id]["title"] or f"Doc {doc_id}"
+    st.subheader("Décomposition du score BM25")
+    st.caption(
+        "Lecture du premier résultat uniquement, pour éviter de ralentir l'onglet. "
+        "BM25 combine la rareté du terme, sa fréquence dans le document et une correction liée à la longueur du document."
+    )
+    st.info(
+        f"Paramètres utilisés : `k1 = {k1:.1f}` et `b = {b:.2f}`. "
+        "`k1` règle la saturation de la fréquence : répéter un mot aide, mais de moins en moins. "
+        "`b` règle la correction par longueur du document. Par défaut, l'application propose `k1 = 1.5` "
+        "et `b = 0.75`, des réglages classiques de BM25."
+    )
+    st.metric(
+        "Score total BM25 du premier résultat",
+        f"{score:.6f}",
+        help="Somme des contributions BM25 des termes de la requête pour le document classé premier.",
+    )
+    st.caption(f"Document analysé : {patent_title}")
+    st.dataframe(breakdown_df, hide_index=True, use_container_width=True)
+
+
+def build_bm25_breakdown(moteur, query, doc_id, variant, k1=1.5, b=0.75):
+    (
+        groupes_termes,
+        index,
+        tailles_documents,
+        longueur_moyenne_documents,
+    ) = get_bm25_breakdown_context(moteur, query, variant)
+    taille_doc = tailles_documents.get(doc_id, 0)
+    if taille_doc == 0 or longueur_moyenne_documents == 0:
+        return pd.DataFrame()
+
+    rows = []
+    for groupe in groupes_termes:
+        best_row = build_best_bm25_group_row(
+            moteur,
+            groupe,
+            doc_id,
+            index,
+            taille_doc,
+            longueur_moyenne_documents,
+            k1,
+            b,
+        )
+        if best_row is not None:
+            rows.append(best_row)
+
+    return pd.DataFrame(rows)
+
+
+def get_bm25_breakdown_context(moteur, query, variant):
+    if variant == "synonyms":
+        index, tailles_documents, longueur_moyenne_documents = moteur._obtenir_index_lemmatise()
+        groupes_termes = moteur._groupes_termes_synonymes(query)
+    elif variant == "lemmatization":
+        index, tailles_documents, longueur_moyenne_documents = moteur._obtenir_index_lemmatise()
+        groupes_termes = moteur._groupes_termes_lemmatises(query)
+    else:
+        index = moteur.index
+        tailles_documents = moteur.tailles_documents
+        longueur_moyenne_documents = moteur.longueur_moyenne_documents
+        groupes_termes = [
+            [mot]
+            for mot in moteur._nettoyer_texte(query)
+        ]
+
+    return groupes_termes, index, tailles_documents, longueur_moyenne_documents
+
+
+def build_best_bm25_group_row(
+    moteur,
+    groupe,
+    doc_id,
+    index,
+    taille_doc,
+    longueur_moyenne_documents,
+    k1,
+    b,
+):
+    best_row = None
+
+    for terme in groupe:
+        frequence_brute = moteur._frequence_terme_document(terme, doc_id, index)
+        if frequence_brute == 0:
+            contribution = 0.0
+            normalisation_longueur = 0.0
+            idf = moteur._calculer_idf_bm25_depuis_index(terme, index)
+        else:
+            idf = moteur._calculer_idf_bm25_depuis_index(terme, index)
+            normalisation_longueur = 1 - b + b * (
+                taille_doc / longueur_moyenne_documents
+            )
+            numerateur = frequence_brute * (k1 + 1)
+            denominateur = frequence_brute + k1 * normalisation_longueur
+            contribution = idf * (numerateur / denominateur)
+
+        row = {
+            "terme affiché": terme,
+            "termes équivalents testés": ", ".join(groupe),
+            "fréquence brute": frequence_brute,
+            "IDF BM25": round(idf, 6),
+            "longueur document": taille_doc,
+            "longueur moyenne corpus": round(longueur_moyenne_documents, 2),
+            "normalisation longueur": round(normalisation_longueur, 6),
+            "k1": round(k1, 2),
+            "b": round(b, 2),
+            "Contribution BM25": round(contribution, 6),
+        }
+
+        if best_row is None or row["Contribution BM25"] > best_row["Contribution BM25"]:
+            best_row = row
+
+    return best_row
 
 
 def render_comparison_definitions():
@@ -473,6 +738,21 @@ def render_comparison_definitions():
             "**Matrice de robustesse** : `1` signifie que le brevet cible est retrouvé dans le top N "
             "pour une requête et une méthode ; `0` signifie qu'il ne l'est pas."
         )
+        st.write(
+            "**Recall@10** : part des requêtes où le brevet cible apparaît dans les 10 premiers résultats."
+        )
+        st.write(
+            "**Precision@10** : part des 10 premières positions occupée par le brevet cible. "
+            "Comme ce dashboard ne suit qu'un seul brevet pertinent, la valeur maximale est 10%."
+        )
+        st.write(
+            "**MRR** : moyenne de `1 / rang`. Cette métrique récompense fortement les modèles qui placent "
+            "le brevet cible très haut."
+        )
+        st.write(
+            "**NDCG@10** : mesure de qualité du classement dans le top 10. Plus le brevet cible est haut, "
+            "plus le score est proche de 100%."
+        )
 
 
 def render_comparison_dashboard(
@@ -480,6 +760,7 @@ def render_comparison_dashboard(
     summary_df,
     comparison_df,
     family_matrix_df,
+    quality_df,
     problematic_queries,
     matrix_df,
     max_rank_display,
@@ -519,10 +800,13 @@ def render_comparison_dashboard(
 
     render_business_charts(ranked_summary)
 
-    st.subheader("3. Analyse par famille de requêtes")
+    st.subheader("3. Qualité du ranking")
+    render_quality_analysis(quality_df)
+
+    st.subheader("4. Analyse par famille de requêtes")
     render_family_analysis(family_matrix_df)
 
-    st.subheader("4. Détails")
+    st.subheader("5. Détails")
     render_problematic_queries(problematic_queries)
     render_comparison_matrix(matrix_df, max_rank_display)
     render_comparison_details(comparison_df, summary_df)
@@ -763,6 +1047,95 @@ def render_business_charts(ranked_summary):
             "Plus la barre est basse, plus le modèle est rapide."
         )
         st.bar_chart(chart_df["temps moyen (ms)"].sort_values(ascending=True), use_container_width=True)
+
+
+def render_quality_analysis(quality_df):
+    st.caption(
+        "Cette section mesure la qualité du classement. Comme le test suit un seul brevet cible pertinent "
+        "par requête, les métriques les plus utiles sont Recall@10, MRR@10 et NDCG@10."
+    )
+    with st.expander("Comment lire ces métriques de qualité", expanded=False):
+        st.write(
+            "**Recall global** : part des requêtes où le brevet cible est retrouvé quelque part dans les résultats."
+        )
+        st.write(
+            "**Recall@10** : part des requêtes où le brevet cible apparaît dans les 10 premiers résultats. "
+            "C'est l'indicateur le plus proche de la visibilité utilisateur."
+        )
+        st.write(
+            "**Precision@10** : part des 10 premières places occupée par le brevet cible. "
+            "Comme on ne suit qu'un seul brevet pertinent, cette métrique est surtout indicative et plafonne à 10%."
+        )
+        st.write(
+            "**MRR@10** : moyenne de `1 / rang` quand le brevet est dans le top 10. "
+            "Un modèle qui place souvent le brevet en rang 1 obtient un meilleur MRR."
+        )
+        st.write(
+            "**NDCG@10** : qualité du classement dans le top 10. "
+            "Plus le brevet cible est haut dans les résultats, plus la valeur se rapproche de 100%."
+        )
+
+    st.dataframe(quality_df, hide_index=True, use_container_width=True)
+
+
+def build_quality_metrics(comparison_df, top_k):
+    rows = []
+
+    for method_name, method_df in comparison_df.groupby("méthode", sort=False):
+        query_count = method_df["requête"].nunique()
+        if query_count == 0:
+            continue
+
+        found_anywhere = method_df["trouvé"].fillna(False)
+        ranks = method_df["rang"]
+        in_top_k = found_anywhere & ranks.notna() & (ranks <= top_k)
+
+        recall_global = found_anywhere.mean() * 100
+        recall_at_k = in_top_k.mean() * 100
+        precision_at_k = (in_top_k.sum() / (query_count * top_k)) * 100
+        reciprocal_ranks = ranks.where(in_top_k, other=0).apply(
+            lambda rank: 1 / rank if rank else 0
+        )
+        ndcg_values = ranks.where(in_top_k, other=0).apply(
+            lambda rank: 1 / math.log2(rank + 1) if rank else 0
+        )
+
+        rows.append(
+            {
+                "Méthode": method_name,
+                "Recall global": round(recall_global, 1),
+                f"Recall@{top_k}": round(recall_at_k, 1),
+                f"Precision@{top_k}": round(precision_at_k, 1),
+                f"MRR@{top_k}": round(reciprocal_ranks.mean(), 3),
+                f"NDCG@{top_k}": round(ndcg_values.mean() * 100, 1),
+                "Lecture qualité": build_quality_reading(
+                    recall_at_k,
+                    reciprocal_ranks.mean(),
+                    ndcg_values.mean() * 100,
+                ),
+            }
+        )
+
+    quality_df = pd.DataFrame(rows)
+    if quality_df.empty:
+        return quality_df
+
+    return quality_df.sort_values(
+        [f"NDCG@{top_k}", f"MRR@{top_k}", f"Recall@{top_k}"],
+        ascending=[False, False, False],
+    ).reset_index(drop=True)
+
+
+def build_quality_reading(recall_at_k, mrr_at_k, ndcg_at_k):
+    if recall_at_k >= 80 and mrr_at_k >= 0.5:
+        return "Très bonne qualité : le brevet est souvent visible et bien classé"
+    if recall_at_k >= 70:
+        return "Bonne visibilité, mais le rang peut encore varier"
+    if ndcg_at_k >= 40:
+        return "Qualité correcte, avec des résultats parfois trop bas"
+    if recall_at_k > 0:
+        return "Qualité limitée : le brevet est retrouvé mais rarement bien placé"
+    return "Qualité faible : le brevet cible n'est pas visible dans le top 10"
 
 
 def build_family_matrix(comparison_df, max_rank_display):
