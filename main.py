@@ -1420,7 +1420,11 @@ def get_splade_encoder():
 
 def search_splade(moteur, query):
     """
-    Recherche locale par score dot product sur vecteurs creux SPLADE.
+    Recherche SPLADE locale.
+
+    Les documents et la requête sont encodés en vecteurs creux, puis comparés
+    par produit scalaire. Plus le score est élevé, plus le document est proche
+    de la requête selon SPLADE.
     """
     if not query.strip():
         return []
