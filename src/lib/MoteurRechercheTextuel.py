@@ -1,4 +1,6 @@
 import math
+import pickle
+import time
 
 class MoteurRechercheTextuel:
     def __init__(self):
@@ -9,6 +11,8 @@ class MoteurRechercheTextuel:
         self.index_lemmatise = None
         self.tailles_documents_lemmatise = None
         self.longueur_moyenne_documents_lemmatise = 0.0
+        self.corpus_vectors = {}
+        self.splade_encoder = None
         self._wordnet = None
         self._wordnet_disponible = None
         self._lemmatizer = None
@@ -17,10 +21,25 @@ class MoteurRechercheTextuel:
         """
         Transforme une chaîne de caractères en une liste de mots nettoyés.
         """
+        stopwords = {
+            "a", "an", "and", "are", "as", "at", "be", "by", "for", "from",
+            "has", "he", "in", "is", "it", "its", "of", "on", "or", "that",
+            "the", "to", "was", "were", "with", "will", "we", "you", "your",
+            "this", "these", "those", "they", "their", "them", "than", "then",
+            "our", "us", "do", "does", "did", "not", "but", "if", "so", "also",
+            "can", "could", "should", "would", "about", "how", "what", "when",
+            "where", "why", "which", "all", "any", "each", "both", "either",
+            "neither", "such", "more", "most", "less", "few", "many", "some",
+            "into", "over", "under", "between", "after", "before", "during",
+            "while", "within", "without", "using", "used", "through", "because"
+        }
+
         texte_nettoye = texte.lower()
-        for caractere in [".", ",", "!", "?", "'", "-", "«", "»", ":", ";"]:
+        for caractere in [".", ",", "!", "?", "'", "-", "«", "»", ":", ";", "(", ")", "[", "]", "{", "}", "/", "\\", "*", "_", "#", "@", "&", "%", "$", "~", "^", "=", "+", "<", ">", "|", "`", '"']:
             texte_nettoye = texte_nettoye.replace(caractere, " ")
-        return texte_nettoye.split()
+
+        mots = [mot for mot in texte_nettoye.split() if mot not in stopwords]
+        return mots
 
     def indexer_corpus(self, corpus):
         """
@@ -51,7 +70,86 @@ class MoteurRechercheTextuel:
                 self.index[mot].append((doc_id, freq))
 
         self.longueur_moyenne_documents = self._calculer_longueur_moyenne_documents()
+        self.corpus_vectors = {}
         self._indexer_corpus_lemmatise(mots_par_document)
+
+    def indexer_corpus_splade(self, corpus, encoder=None, batch_size=32):
+        """
+        Indexe le corpus en vecteurs creux SPLADE en mémoire.
+        Chaque vecteur est stocké sous la forme {index: poids}.
+        """
+        if encoder is not None:
+            self.splade_encoder = encoder
+
+        if self.splade_encoder is None:
+            try:
+                import torch
+                from pinecone_text.sparse import SpladeEncoder
+            except ImportError as exc:
+                raise RuntimeError(
+                    "La bibliothèque pinecone-text avec SPLADE n'est pas installée. "
+                    "Installez avec `pip install \"pinecone-text[splade]\"` et `pip install torch`."
+                ) from exc
+
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            self.splade_encoder = SpladeEncoder(device=device)
+
+        self.corpus_vectors = {}
+        ordered_doc_ids = sorted(corpus.keys())
+        total_docs = len(ordered_doc_ids)
+        start_time = time.perf_counter()
+
+        for start in range(0, total_docs, batch_size):
+            batch_doc_ids = ordered_doc_ids[start:start + batch_size]
+            batch_texts = [corpus[doc_id] for doc_id in batch_doc_ids]
+            batch_vectors = self.splade_encoder.encode_documents(batch_texts)
+
+            for doc_id, vector in zip(batch_doc_ids, batch_vectors):
+                if not vector:
+                    self.corpus_vectors[doc_id] = {}
+                    continue
+
+                indices = vector.get("indices", [])
+                values = vector.get("values", [])
+                self.corpus_vectors[doc_id] = {
+                    int(index): float(value)
+                    for index, value in zip(indices, values)
+                    if value != 0
+                }
+
+            processed_docs = min(start + batch_size, total_docs)
+            elapsed = time.perf_counter() - start_time
+            progress = processed_docs / total_docs if total_docs else 1.0
+            percentage = progress * 100
+            speed = processed_docs / elapsed if elapsed > 0 else 0.0
+            if processed_docs % 100 == 0 or processed_docs == total_docs:
+                print(
+                    f"Indexation SPLADE en cours... {processed_docs}/{total_docs} "
+                    f"documents traités ({percentage:.1f}%) - "
+                    f"{speed:.2f} doc/s - {elapsed:.1f}s"
+                )
+
+        return self.corpus_vectors
+
+    def sauvegarder_index(self, chemin):
+        """
+        Sauvegarde le dictionnaire des vecteurs SPLADE sur disque.
+        """
+        with open(chemin, "wb") as fichier:
+            pickle.dump(self.corpus_vectors, fichier)
+
+    def charger_index(self, chemin):
+        """
+        Charge un dictionnaire de vecteurs SPLADE depuis le disque.
+        Retourne True si le chargement a réussi, sinon False.
+        """
+        try:
+            with open(chemin, "rb") as fichier:
+                self.corpus_vectors = pickle.load(fichier)
+            return True
+        except (FileNotFoundError, EOFError, pickle.PickleError):
+            self.corpus_vectors = {}
+            return False
 
     def _indexer_corpus_lemmatise(self, mots_par_document):
         """
