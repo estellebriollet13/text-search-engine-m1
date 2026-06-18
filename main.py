@@ -733,10 +733,11 @@ def render_comparison_definitions():
         )
         st.write(
             "**Requêtes trouvées** : nombre de variantes de requête pour lesquelles le brevet cible apparaît "
-            "dans les résultats de la méthode."
+            "dans le rang maximal considéré."
         )
         st.write(
-            "**Taux de réussite** : `requêtes trouvées / nombre total de variantes testées * 100`."
+            "**Taux de réussite** : part des variantes où le brevet cible apparaît dans le rang maximal considéré. "
+            "C'est le même calcul que la moyenne des `1` dans la matrice requête x méthode."
         )
         st.write(
             "**Top N** : nombre de variantes pour lesquelles le brevet cible apparaît dans les N premiers résultats. "
@@ -750,7 +751,7 @@ def render_comparison_definitions():
             "Par exemple, `1` veut dire qu'au moins une variante place le brevet en premier."
         )
         st.write(
-            "**Rang moyen** : position moyenne du brevet cible dans les résultats quand il est retrouvé. "
+            "**Rang moyen** : position moyenne du brevet cible uniquement quand il apparaît dans le rang maximal considéré. "
             "Rang 1 signifie premier résultat ; plus le rang moyen est bas, meilleure est la méthode."
         )
         st.write(
@@ -784,7 +785,10 @@ def render_comparison_dashboard(
     matrix_df,
     max_rank_display,
 ):
-    ranked_summary = rank_methods(top10_summary_df)
+    top10_rates = top10_summary_df.set_index("méthode")[f"taux top {VISIBILITY_TOP_RANK}"]
+    dashboard_summary = enrich_comparison_summary(summary_df, comparison_df, max_rank_display)
+    dashboard_summary[f"taux top {VISIBILITY_TOP_RANK}"] = dashboard_summary["méthode"].map(top10_rates)
+    ranked_summary = rank_methods(dashboard_summary)
     best_method = ranked_summary.iloc[0]
 
     st.subheader("1. Synthèse rapide")
@@ -920,16 +924,16 @@ def build_comparison_summary(comparison_df, max_rank_display):
     for method_name, method_df in comparison_df.groupby("méthode", sort=False):
         found_df = method_df[method_df["trouvé"]]
         top_rank_df = found_df[found_df["rang"] <= max_rank_display]
-        best_rank = int(found_df["rang"].min()) if not found_df.empty else None
-        average_rank = round(found_df["rang"].mean(), 2) if not found_df.empty else None
+        best_rank = int(top_rank_df["rang"].min()) if not top_rank_df.empty else None
+        average_rank = round(top_rank_df["rang"].mean(), 2) if not top_rank_df.empty else None
         found_count = int(found_df.shape[0])
         top_count = int(top_rank_df.shape[0])
         average_time = round(method_df["temps (ms)"].mean(), 2)
         summary_rows.append(
             {
                 "méthode": method_name,
-                "requêtes trouvées": found_count,
-                "taux de réussite": round((found_count / query_count) * 100, 1),
+                "requêtes trouvées": top_count,
+                "taux de réussite": round((top_count / query_count) * 100, 1),
                 f"top {max_rank_display}": top_count,
                 f"taux top {max_rank_display}": round((top_count / query_count) * 100, 1),
                 "meilleur rang": best_rank,
@@ -1012,7 +1016,7 @@ def render_decision_summary_cards(best_method):
     columns[1].metric(
         "Taux de réussite",
         f"{best_method['taux de réussite']:.1f}%",
-        help="Nombre de formulations où le brevet cible est retrouvé / nombre total de formulations testées × 100.",
+        help="Nombre de formulations où le brevet cible apparaît dans le rang maximal considéré / nombre total de formulations testées × 100.",
     )
     columns[2].metric(
         "Taux top 10",
@@ -1040,7 +1044,7 @@ def render_business_charts(ranked_summary):
     with left_col:
         st.write("**Taux de réussite par méthode**")
         st.caption(
-            "Règle de calcul : nombre de formulations où le brevet cible est retrouvé / "
+            "Règle de calcul : nombre de formulations où le brevet cible apparaît dans le rang maximal considéré / "
             "nombre total de formulations testées × 100."
         )
         st.bar_chart(chart_df["taux de réussite"], use_container_width=True)
