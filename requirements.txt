@@ -5,6 +5,7 @@
 # langdetect sert a estimer la langue des titres, abstracts, claims et descriptions.
 # nltk sert a utiliser WordNet pour les synonymes et la lemmatisation.
 # pandas sert aux tableaux du dashboard de comparaison.
+# pinecone-text[splade] et torch servent a l'indexation locale SPLADE.
 #
 # Ces dependances servent a ouvrir les notebooks et a lancer l'interface Streamlit.
 jupyterlab
@@ -14,4 +15,6 @@ matplotlib
 langdetect
 nltk
 pandas
+pinecone-text[splade]
+torch
 streamlit

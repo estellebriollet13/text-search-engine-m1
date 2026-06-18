@@ -8,6 +8,7 @@ Moteur de recherche textuel basé sur un index inversé. Le projet compare plusi
 - BM25 avec synonymes WordNet
 - TF-IDF avec lemmatisation
 - BM25 avec lemmatisation
+- SPLADE local (vecteurs creux)
 
 Une interface Streamlit permet de lancer des recherches sur un dataset de brevets et de comparer la robustesse des méthodes face à différentes formulations de requête.
 
@@ -43,6 +44,20 @@ Avec `venv` :
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+```
+
+Pour installer explicitement les dépendances SPLADE avant de lancer l’application :
+
+```bash
+pip install "pinecone-text[splade]"
+pip install torch
+```
+
+Pour installer explicitement les dépendances SPLADE avant de lancer l’application :
+
+```bash
+pip install "pinecone-text[splade]"
+pip install torch
 ```
 
 ## Téléchargement du dataset

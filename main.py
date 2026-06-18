@@ -101,46 +101,33 @@ def main():
 
     st.caption(f"Dataset chargé depuis : `{dataset_path}`")
 
-    (
-        tab_tfidf,
-        tab_bm25,
-        tab_tfidf_synonyms,
-        tab_bm25_synonyms,
-        tab_tfidf_lemma,
-        tab_bm25_lemma,
-        tab_comparison,
-    ) = st.tabs(
-        [
-            "TF-IDF pur",
-            "BM25 pur",
-            "TF-IDF + synonymes",
-            "BM25 + synonymes",
-            "TF-IDF + lemmatisation",
-            "BM25 + lemmatisation",
-            "Comparaison",
-        ]
-    )
+    search_methods = get_search_methods()
+    tab_names = [method_name for method_name, _ in search_methods]
+    tab_objects = st.tabs(tab_names + ["Comparaison"])
 
-    with tab_tfidf:
-        render_tfidf_tab()
+    for tab, (method_name, _) in zip(tab_objects[:-1], search_methods):
+        with tab:
+            render_search_method_tab(method_name)
 
-    with tab_bm25:
-        render_bm25_tab()
-
-    with tab_tfidf_synonyms:
-        render_tfidf_synonyms_tab()
-
-    with tab_bm25_synonyms:
-        render_bm25_synonyms_tab()
-
-    with tab_tfidf_lemma:
-        render_tfidf_lemmatization_tab()
-
-    with tab_bm25_lemma:
-        render_bm25_lemmatization_tab()
-
-    with tab_comparison:
+    with tab_objects[-1]:
         render_comparison_tab()
+
+
+def render_search_method_tab(method_name):
+    tab_renderers = {
+        "TF-IDF pur": render_tfidf_tab,
+        "BM25 pur": render_bm25_tab,
+        "TF-IDF + synonymes": render_tfidf_synonyms_tab,
+        "BM25 + synonymes": render_bm25_synonyms_tab,
+        "TF-IDF + lemmatisation": render_tfidf_lemmatization_tab,
+        "BM25 + lemmatisation": render_bm25_lemmatization_tab,
+        "SPLADE": render_splade_tab,
+    }
+
+    if method_name not in tab_renderers:
+        raise ValueError(f"Aucun rendu défini pour la méthode de recherche : {method_name}")
+
+    tab_renderers[method_name]()
 
 
 def render_tfidf_tab():
@@ -222,6 +209,18 @@ def render_bm25_tab():
             "plus le document est pertinent en tenant compte de la fréquence des termes et de la longueur du document."
         ),
         bm25_breakdown_variant="pure",
+    )
+
+
+def render_splade_tab():
+    render_search_tab(
+        method_key="splade",
+        score_name="SPLADE",
+        search_callback=lambda moteur, query: search_splade(moteur, query),
+        score_description=(
+            "Score : score dot product sur les vecteurs creux SPLADE ; "
+            "plus il est élevé, plus le document est compatible avec la requête."
+        ),
     )
 
 
@@ -869,6 +868,7 @@ def get_search_methods():
         ("BM25 + synonymes", lambda moteur, query: moteur.chercher_bm25_synonymes(query)),
         ("TF-IDF + lemmatisation", lambda moteur, query: moteur.chercher_tfidf_lemmatise(query)),
         ("BM25 + lemmatisation", lambda moteur, query: moteur.chercher_bm25_lemmatise(query)),
+        ("SPLADE", search_splade),
     ]
 
 
@@ -1409,6 +1409,49 @@ def find_result_rank_and_score(results, target_doc_id):
     return None, 0.0
 
 
+@st.cache_resource(show_spinner="Chargement du modèle SPLADE...")
+def get_splade_encoder():
+    import torch
+    from pinecone_text.sparse import SpladeEncoder
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    return SpladeEncoder(device=device)
+
+
+def search_splade(moteur, query):
+    """
+    Recherche locale par score dot product sur vecteurs creux SPLADE.
+    """
+    if not query.strip():
+        return []
+
+    if not moteur.corpus_vectors:
+        moteur.indexer_corpus_splade(moteur.documents, encoder=get_splade_encoder())
+
+    try:
+        query_vector = get_splade_encoder().encode_queries(query)
+    except Exception:
+        return []
+
+    query_sparse = {
+        int(index): float(value)
+        for index, value in zip(
+            query_vector.get("indices", []),
+            query_vector.get("values", []),
+        )
+        if value != 0
+    }
+
+    scores = {}
+    for doc_id, doc_vector in moteur.corpus_vectors.items():
+        score = 0.0
+        for index, weight in query_sparse.items():
+            score += weight * doc_vector.get(index, 0.0)
+        scores[doc_id] = score
+
+    return sorted(scores.items(), key=lambda item: item[1], reverse=True)
+
+
 @st.cache_data(show_spinner="Comptage des documents...")
 def count_searchable_patents():
     total = 0
@@ -1468,6 +1511,17 @@ def build_search_engine(patents):
     }
     moteur = MoteurRechercheTextuel()
     moteur.indexer_corpus(corpus)
+
+    index_path = Path("index_splade.pkl")
+    if index_path.exists():
+        print(f"Chargement de l'index SPLADE depuis {index_path}...")
+        moteur.charger_index(index_path)
+    else:
+        print(f"Index SPLADE introuvable, création du cache dans {index_path}...")
+        moteur.indexer_corpus_splade(corpus, encoder=get_splade_encoder())
+        moteur.sauvegarder_index(index_path)
+        print(f"Index SPLADE sauvegardé dans {index_path}.")
+
     return moteur
 
 
