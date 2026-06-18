@@ -733,10 +733,11 @@ def render_comparison_definitions():
         )
         st.write(
             "**Requêtes trouvées** : nombre de variantes de requête pour lesquelles le brevet cible apparaît "
-            "dans les résultats de la méthode."
+            "dans le rang maximal considéré."
         )
         st.write(
-            "**Taux de réussite** : `requêtes trouvées / nombre total de variantes testées * 100`."
+            "**Taux de réussite** : part des variantes où le brevet cible apparaît dans le rang maximal considéré. "
+            "C'est le même calcul que la moyenne des `1` dans la matrice requête x méthode."
         )
         st.write(
             "**Top N** : nombre de variantes pour lesquelles le brevet cible apparaît dans les N premiers résultats. "
@@ -784,7 +785,10 @@ def render_comparison_dashboard(
     matrix_df,
     max_rank_display,
 ):
-    ranked_summary = rank_methods(top10_summary_df)
+    top10_rates = top10_summary_df.set_index("méthode")[f"taux top {VISIBILITY_TOP_RANK}"]
+    dashboard_summary = enrich_comparison_summary(summary_df, comparison_df, max_rank_display)
+    dashboard_summary[f"taux top {VISIBILITY_TOP_RANK}"] = dashboard_summary["méthode"].map(top10_rates)
+    ranked_summary = rank_methods(dashboard_summary)
     best_method = ranked_summary.iloc[0]
 
     st.subheader("1. Synthèse rapide")
@@ -928,8 +932,8 @@ def build_comparison_summary(comparison_df, max_rank_display):
         summary_rows.append(
             {
                 "méthode": method_name,
-                "requêtes trouvées": found_count,
-                "taux de réussite": round((found_count / query_count) * 100, 1),
+                "requêtes trouvées": top_count,
+                "taux de réussite": round((top_count / query_count) * 100, 1),
                 f"top {max_rank_display}": top_count,
                 f"taux top {max_rank_display}": round((top_count / query_count) * 100, 1),
                 "meilleur rang": best_rank,
@@ -1012,7 +1016,7 @@ def render_decision_summary_cards(best_method):
     columns[1].metric(
         "Taux de réussite",
         f"{best_method['taux de réussite']:.1f}%",
-        help="Nombre de formulations où le brevet cible est retrouvé / nombre total de formulations testées × 100.",
+        help="Nombre de formulations où le brevet cible apparaît dans le rang maximal considéré / nombre total de formulations testées × 100.",
     )
     columns[2].metric(
         "Taux top 10",
@@ -1040,7 +1044,7 @@ def render_business_charts(ranked_summary):
     with left_col:
         st.write("**Taux de réussite par méthode**")
         st.caption(
-            "Règle de calcul : nombre de formulations où le brevet cible est retrouvé / "
+            "Règle de calcul : nombre de formulations où le brevet cible apparaît dans le rang maximal considéré / "
             "nombre total de formulations testées × 100."
         )
         st.bar_chart(chart_df["taux de réussite"], use_container_width=True)
@@ -1448,10 +1452,14 @@ def search_splade(moteur, query):
 
     scores = {}
     for doc_id, doc_vector in moteur.corpus_vectors.items():
+        if doc_id not in moteur.documents:
+            continue
+
         score = 0.0
         for index, weight in query_sparse.items():
             score += weight * doc_vector.get(index, 0.0)
-        scores[doc_id] = score
+        if score > 0:
+            scores[doc_id] = score
 
     return sorted(scores.items(), key=lambda item: item[1], reverse=True)
 
@@ -1520,13 +1528,28 @@ def build_search_engine(patents):
     if index_path.exists():
         print(f"Chargement de l'index SPLADE depuis {index_path}...")
         moteur.charger_index(index_path)
-    else:
-        print(f"Index SPLADE introuvable, création du cache dans {index_path}...")
+
+    if not splade_index_matches_corpus(moteur.corpus_vectors, corpus):
+        print(f"Index SPLADE absent ou incomplet, création du cache dans {index_path}...")
         moteur.indexer_corpus_splade(corpus, encoder=get_splade_encoder())
         moteur.sauvegarder_index(index_path)
         print(f"Index SPLADE sauvegardé dans {index_path}.")
+    else:
+        moteur.corpus_vectors = {
+            doc_id: moteur.corpus_vectors[doc_id]
+            for doc_id in sorted(corpus.keys())
+        }
 
     return moteur
+
+
+def splade_index_matches_corpus(corpus_vectors, corpus):
+    if not corpus_vectors:
+        return False
+
+    corpus_doc_ids = set(corpus.keys())
+    indexed_doc_ids = set(corpus_vectors.keys())
+    return corpus_doc_ids.issubset(indexed_doc_ids)
 
 
 def build_search_text(row):
