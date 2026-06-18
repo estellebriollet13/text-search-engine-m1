@@ -47,13 +47,15 @@ pip install -r requirements.txt
 
 ## Téléchargement du dataset
 
-Avant de lancer Streamlit, il faut télécharger le dataset Kaggle et placer le CSV au chemin attendu par l'application :
+Avant de lancer Streamlit, il faut que le dataset Kaggle soit disponible au chemin attendu par l'application :
 
 ```text
 data/patent_analysis_data.csv
 ```
 
-Le téléchargement peut se faire avec `kagglehub` :
+Au lancement, `main.py` vérifie ce fichier. S'il existe déjà, il est réutilisé. S'il manque, l'application tente de télécharger automatiquement le dataset avec `kagglehub`, puis copie le CSV dans `data/patent_analysis_data.csv`.
+
+Le téléchargement peut aussi se faire manuellement avec `kagglehub` :
 
 ```python
 from pathlib import Path
@@ -79,7 +81,7 @@ print("Dataset téléchargé dans :", download_path)
 print("CSV prêt pour Streamlit :", target_path)
 ```
 
-Sans ce fichier, l'application ne peut pas compter les documents, charger le corpus ni construire l'index de recherche.
+Sans ce fichier, et si le téléchargement automatique échoue, l'application ne peut pas compter les documents, charger le corpus ni construire l'index de recherche.
 
 ## Ressources NLTK
 

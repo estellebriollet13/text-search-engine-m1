@@ -1,6 +1,7 @@
 import csv
 import math
 import re
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -11,7 +12,10 @@ import streamlit as st
 from src.lib.MoteurRechercheTextuel import MoteurRechercheTextuel
 
 
-DATA_PATH = Path("data/patent_analysis_data.csv")
+BASE_DIR = Path(__file__).resolve().parent
+DATA_PATH = BASE_DIR / "data" / "patent_analysis_data.csv"
+KAGGLE_DATASET_HANDLE = "karnikakapoor/ml-in-healthcare-patent-data"
+DATASET_REQUIRED_COLUMNS = {"Patent ID", "Title", "Abstract"}
 TEXT_COLUMNS = ("Title", "Abstract")
 TARGET_PATENT_TITLE = "Artificial intelligence robot cleaner and robot cleaning system"
 VISIBILITY_TOP_RANK = 10
@@ -80,6 +84,22 @@ def main():
     )
 
     st.title("Moteur de recherche textuel")
+    try:
+        with st.spinner("Vérification du dataset..."):
+            dataset_path = ensure_dataset_available()
+    except Exception as error:
+        st.error(
+            "Impossible de préparer le dataset. L'application s'arrête ici pour éviter de lancer "
+            "Streamlit sans données."
+        )
+        st.info(
+            "Vérifiez d'abord les dépendances avec `python3 -m pip install -r requirements.txt`. "
+            "Si Kaggle demande une authentification, configurez aussi vos accès Kaggle, puis relancez Streamlit."
+        )
+        st.warning(str(error))
+        st.stop()
+
+    st.caption(f"Dataset chargé depuis : `{dataset_path}`")
 
     (
         tab_tfidf,
@@ -1392,6 +1412,7 @@ def find_result_rank_and_score(results, target_doc_id):
 @st.cache_data(show_spinner="Comptage des documents...")
 def count_searchable_patents():
     total = 0
+    ensure_dataset_available()
     increase_csv_field_limit()
 
     with DATA_PATH.open("r", encoding="utf-8", newline="") as csv_file:
@@ -1409,6 +1430,7 @@ def count_searchable_patents():
 @st.cache_data(show_spinner="Chargement du corpus...")
 def load_patents(max_documents):
     patents = {}
+    ensure_dataset_available()
     increase_csv_field_limit()
 
     with DATA_PATH.open("r", encoding="utf-8", newline="") as csv_file:
@@ -1455,6 +1477,76 @@ def build_search_text(row):
 
 def clean_value(value):
     return str(value or "").strip()
+
+
+def ensure_dataset_available():
+    if is_valid_dataset_csv(DATA_PATH):
+        return str(DATA_PATH)
+
+    try:
+        import kagglehub
+    except ImportError as import_error:
+        raise ImportError(
+            "La dépendance 'kagglehub' est requise pour télécharger le dataset automatiquement. "
+            "Installez-la avec : pip install -r requirements.txt"
+        ) from import_error
+
+    downloaded_path = download_kaggle_dataset(kagglehub)
+    csv_files = sorted(
+        downloaded_path.rglob("*.csv"),
+        key=lambda path: path.stat().st_size,
+        reverse=True,
+    )
+    if not csv_files:
+        raise FileNotFoundError(
+            f"Aucun fichier CSV trouvé dans le dataset téléchargé : {downloaded_path}"
+        )
+
+    source_csv = find_dataset_csv(csv_files)
+    DATA_PATH.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = DATA_PATH.with_suffix(".csv.tmp")
+    shutil.copy(source_csv, temporary_path)
+    temporary_path.replace(DATA_PATH)
+
+    if not is_valid_dataset_csv(DATA_PATH):
+        raise ValueError(
+            f"Le fichier téléchargé ne contient pas les colonnes attendues : {DATA_PATH}"
+        )
+
+    return str(DATA_PATH)
+
+
+def download_kaggle_dataset(kagglehub):
+    try:
+        return Path(kagglehub.dataset_download(KAGGLE_DATASET_HANDLE))
+    except Exception as error:
+        raise RuntimeError(
+            "Le téléchargement automatique du dataset Kaggle a échoué. "
+            "Vérifiez la connexion Internet et, si Kaggle le demande, la configuration des identifiants Kaggle. "
+            f"Dataset attendu : {KAGGLE_DATASET_HANDLE}"
+        ) from error
+
+
+def find_dataset_csv(csv_files):
+    for csv_file in csv_files:
+        if is_valid_dataset_csv(csv_file):
+            return csv_file
+    return csv_files[0]
+
+
+def is_valid_dataset_csv(path):
+    if not path.exists() or path.stat().st_size == 0:
+        return False
+
+    try:
+        increase_csv_field_limit()
+        with path.open("r", encoding="utf-8", newline="") as csv_file:
+            reader = csv.DictReader(csv_file)
+            fieldnames = set(reader.fieldnames or [])
+    except Exception:
+        return False
+
+    return DATASET_REQUIRED_COLUMNS.issubset(fieldnames)
 
 
 def increase_csv_field_limit():

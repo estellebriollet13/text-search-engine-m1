@@ -362,6 +362,7 @@ flowchart TD
 flowchart TD
   A(["main()"])
   B["st.set_page_config()<br/>Prépare la page Streamlit"]
+  BA["ensure_dataset_available()<br/>Vérifie ou télécharge le CSV Kaggle"]
   C["st.tabs()<br/>Crée les onglets de recherche et comparaison"]
 
   D{"Onglet ouvert ?"}
@@ -375,6 +376,7 @@ flowchart TD
 
   K["render_search_tab()<br/>Fonction commune aux 6 onglets"]
   L["count_searchable_patents()<br/>Compte les brevets exploitables"]
+  LA["ensure_dataset_available()<br/>Garde-fou avant lecture CSV"]
   M["load_patents(max_documents)<br/>Charge les lignes du CSV"]
   N["build_search_text(row)<br/>Assemble Title + Abstract"]
   O["build_search_engine(patents)<br/>Crée le moteur"]
@@ -403,7 +405,7 @@ flowchart TD
   AI["render_comparison_dashboard()<br/>Affiche synthèse, graphiques, détails"]
   AJ["build_automatic_conclusion()<br/>Produit la conclusion automatique"]
 
-  A --> B --> C --> D
+  A --> B --> BA --> C --> D
 
   D -- "Recherche simple" --> E
   D -- "Recherche simple" --> F
@@ -419,7 +421,7 @@ flowchart TD
   I --> K
   J --> K
 
-  K --> L --> M --> N --> O --> P --> Q --> R
+  K --> L --> LA --> M --> N --> O --> P --> Q --> R
   R --> S
   R --> T
   R --> U
@@ -449,8 +451,8 @@ flowchart TD
   classDef compare fill:#ede9fe,stroke:#7c3aed,stroke-width:1.5px,color:#17202a;
   classDef decision fill:#ffffff,stroke:#475467,stroke-width:1.5px,color:#17202a;
 
-  class A,B,C,D,E,F,G,H,I,J,K,Z,AI streamlit;
-  class L,M,N,O load;
+  class A,B,BA,C,D,E,F,G,H,I,J,K,Z,AI streamlit;
+  class L,LA,M,N,O load;
   class P,Q,R,S,T,U,V,W,X,Y engine;
   class AA,AB,AC,AD,AE,AF,AG,AH,AJ compare;
   class D,R decision;
