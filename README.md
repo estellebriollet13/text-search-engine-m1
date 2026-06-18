@@ -45,6 +45,42 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+## Téléchargement du dataset
+
+Avant de lancer Streamlit, il faut télécharger le dataset Kaggle et placer le CSV au chemin attendu par l'application :
+
+```text
+data/patent_analysis_data.csv
+```
+
+Le téléchargement peut se faire avec `kagglehub` :
+
+```python
+from pathlib import Path
+import shutil
+
+import kagglehub
+
+download_path = Path(
+    kagglehub.dataset_download("karnikakapoor/ml-in-healthcare-patent-data")
+)
+
+csv_files = list(download_path.glob("*.csv"))
+if not csv_files:
+    raise FileNotFoundError(f"Aucun fichier CSV trouvé dans {download_path}")
+
+data_dir = Path("data")
+data_dir.mkdir(exist_ok=True)
+
+target_path = data_dir / "patent_analysis_data.csv"
+shutil.copy(csv_files[0], target_path)
+
+print("Dataset téléchargé dans :", download_path)
+print("CSV prêt pour Streamlit :", target_path)
+```
+
+Sans ce fichier, l'application ne peut pas compter les documents, charger le corpus ni construire l'index de recherche.
+
 ## Ressources NLTK
 
 Les onglets avec synonymes et lemmatisation utilisent WordNet. Après l’installation des dépendances, télécharger les ressources NLTK :

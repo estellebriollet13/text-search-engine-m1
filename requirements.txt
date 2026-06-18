@@ -1,6 +1,7 @@
 # Python 3.13
 #
 # matplotlib sert a generer les graphiques dans les notebooks.
+# kagglehub sert a telecharger le dataset Kaggle depuis le README.
 # langdetect sert a estimer la langue des titres, abstracts, claims et descriptions.
 # nltk sert a utiliser WordNet pour les synonymes et la lemmatisation.
 # pandas sert aux tableaux du dashboard de comparaison.
@@ -8,6 +9,7 @@
 # Ces dependances servent a ouvrir les notebooks et a lancer l'interface Streamlit.
 jupyterlab
 ipykernel
+kagglehub
 matplotlib
 langdetect
 nltk
