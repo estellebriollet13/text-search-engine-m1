@@ -841,10 +841,8 @@ def render_comparison_dashboard(
     st.subheader("4. Analyse par famille de requêtes")
     render_family_analysis(family_matrix_df)
 
-    st.subheader("5. Détails")
-    render_problematic_queries(problematic_queries)
-    render_comparison_matrix(matrix_df, max_rank_display)
-    render_comparison_details(comparison_df, summary_df)
+    st.subheader("5. Exemples par famille de requêtes")
+    render_family_examples(comparison_df)
 
 
 def render_comparison_matrix(matrix_df, max_rank_display):
@@ -1255,6 +1253,86 @@ def render_family_definition_help():
         )
 
 
+def render_family_examples(comparison_df):
+    examples_df = build_family_examples(comparison_df)
+    if examples_df.empty:
+        st.info("Aucun exemple de famille disponible pour les requêtes testées.")
+        return
+
+    st.caption(
+        "Ce tableau donne un exemple concret pour chaque famille détectée dans les variantes testées."
+    )
+    st.dataframe(examples_df, hide_index=True, use_container_width=True)
+
+
+def build_family_examples(comparison_df):
+    query_family_df = comparison_df[["requête", "famille"]].drop_duplicates()
+    if query_family_df.empty:
+        return pd.DataFrame()
+
+    family_rows = []
+    family_order = get_query_family_order()
+    family_descriptions = get_query_family_descriptions()
+
+    for family in family_order:
+        family_queries = query_family_df[query_family_df["famille"] == family]
+        if family_queries.empty:
+            continue
+
+        family_rows.append(
+            {
+                "Famille": family,
+                "Exemple de requête": family_queries.iloc[0]["requête"],
+                "Nombre de variantes": int(family_queries.shape[0]),
+                "Lecture": family_descriptions.get(family, ""),
+            }
+        )
+
+    extra_families = [
+        family
+        for family in query_family_df["famille"].dropna().unique()
+        if family not in family_order
+    ]
+    for family in extra_families:
+        family_queries = query_family_df[query_family_df["famille"] == family]
+        family_rows.append(
+            {
+                "Famille": family,
+                "Exemple de requête": family_queries.iloc[0]["requête"],
+                "Nombre de variantes": int(family_queries.shape[0]),
+                "Lecture": family_descriptions.get(family, ""),
+            }
+        )
+
+    return pd.DataFrame(family_rows)
+
+
+def get_query_family_order():
+    return [
+        "Requête exacte",
+        "Ordre des mots",
+        "Pluriel / forme grammaticale",
+        "Reformulation sémantique",
+        "Requête large",
+        "Requête bruitée ou discutable",
+        "Recherche brevet / prior art",
+        "Recherche utilisateur naturelle",
+    ]
+
+
+def get_query_family_descriptions():
+    return {
+        "Requête exacte": "Reprend le titre cible ou une variante très proche.",
+        "Ordre des mots": "Utilise les mots importants du titre, mais dans un autre ordre ou en sous-ensemble.",
+        "Pluriel / forme grammaticale": "Change surtout les formes des mots, par exemple singulier, pluriel ou forme en -ing.",
+        "Reformulation sémantique": "Exprime l'idée avec d'autres mots proches du besoin initial.",
+        "Requête large": "Reste très générale, avec un ou deux mots peu spécifiques.",
+        "Requête bruitée ou discutable": "Ajoute des termes éloignés, artificiels ou peu naturels pour le cas étudié.",
+        "Recherche brevet / prior art": "Ressemble à une recherche technique ou juridique autour du brevet.",
+        "Recherche utilisateur naturelle": "Formule le besoin comme un utilisateur non spécialiste.",
+    }
+
+
 def build_problematic_queries(comparison_df):
     rows = []
     synonym_methods = comparison_df["méthode"].str.contains("synonymes", regex=False)
@@ -1354,6 +1432,10 @@ def classify_query_family(query, target_title):
     if normalized_query in normalized_target:
         if has_case_or_punctuation_variation(query, normalized_query):
             return "Requête exacte"
+    if any(token in {"golem", "cleanser", "automaton"} for token in query_tokens):
+        return "Requête bruitée ou discutable"
+    if is_broad_query(query_tokens, normalized_query):
+        return "Requête large"
     if set(query_tokens) == set(target_tokens) and query_tokens != target_tokens:
         return "Ordre des mots"
     if set(query_tokens).issubset(set(target_tokens)) and query_tokens != target_tokens:
@@ -1364,10 +1446,6 @@ def classify_query_family(query, target_title):
         return "Recherche utilisateur naturelle"
     if has_plural_or_grammar_variation(query_tokens, target_tokens):
         return "Pluriel / forme grammaticale"
-    if len(query_tokens) <= 1 or normalized_query in {"system", "robot", "cleaning", "artificial", "intelligence"}:
-        return "Requête large"
-    if any(token in {"golem", "cleanser", "automaton"} for token in query_tokens):
-        return "Requête bruitée ou discutable"
     if any(token in {"intelligent", "smart", "vacuum", "automated", "autonomous", "apparatus"} for token in query_tokens):
         return "Reformulation sémantique"
     if len(set(query_tokens) & set(target_tokens)) < max(1, len(query_tokens) // 3):
@@ -1394,6 +1472,15 @@ def has_plural_or_grammar_variation(query_tokens, target_tokens):
     target_roots = {token.rstrip("s") for token in target_tokens}
     query_roots = {token.rstrip("s") for token in query_tokens}
     return bool(query_roots & target_roots) and query_roots != set(query_tokens)
+
+
+def is_broad_query(query_tokens, normalized_query):
+    broad_terms = {"system", "robot", "cleaning", "artificial", "intelligence"}
+    if len(query_tokens) <= 1:
+        return True
+    if len(query_tokens) <= 2 and set(query_tokens).issubset(broad_terms):
+        return True
+    return normalized_query in broad_terms
 
 
 def is_patent_search_query(query_tokens):
