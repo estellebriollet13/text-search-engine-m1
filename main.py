@@ -1452,10 +1452,14 @@ def search_splade(moteur, query):
 
     scores = {}
     for doc_id, doc_vector in moteur.corpus_vectors.items():
+        if doc_id not in moteur.documents:
+            continue
+
         score = 0.0
         for index, weight in query_sparse.items():
             score += weight * doc_vector.get(index, 0.0)
-        scores[doc_id] = score
+        if score > 0:
+            scores[doc_id] = score
 
     return sorted(scores.items(), key=lambda item: item[1], reverse=True)
 
@@ -1524,13 +1528,28 @@ def build_search_engine(patents):
     if index_path.exists():
         print(f"Chargement de l'index SPLADE depuis {index_path}...")
         moteur.charger_index(index_path)
-    else:
-        print(f"Index SPLADE introuvable, création du cache dans {index_path}...")
+
+    if not splade_index_matches_corpus(moteur.corpus_vectors, corpus):
+        print(f"Index SPLADE absent ou incomplet, création du cache dans {index_path}...")
         moteur.indexer_corpus_splade(corpus, encoder=get_splade_encoder())
         moteur.sauvegarder_index(index_path)
         print(f"Index SPLADE sauvegardé dans {index_path}.")
+    else:
+        moteur.corpus_vectors = {
+            doc_id: moteur.corpus_vectors[doc_id]
+            for doc_id in sorted(corpus.keys())
+        }
 
     return moteur
+
+
+def splade_index_matches_corpus(corpus_vectors, corpus):
+    if not corpus_vectors:
+        return False
+
+    corpus_doc_ids = set(corpus.keys())
+    indexed_doc_ids = set(corpus_vectors.keys())
+    return corpus_doc_ids.issubset(indexed_doc_ids)
 
 
 def build_search_text(row):
