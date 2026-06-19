@@ -6,6 +6,7 @@
 # nltk sert a utiliser WordNet pour les synonymes et la lemmatisation.
 # pandas sert aux tableaux du dashboard de comparaison.
 # pinecone-text[splade] et torch servent a l'indexation locale SPLADE.
+# sentence-transformers sert au moteur dense PatentSBERTa.
 #
 # Ces dependances servent a ouvrir les notebooks et a lancer l'interface Streamlit.
 jupyterlab
@@ -19,3 +20,4 @@ pinecone-text[splade]
 torch
 streamlit
 torchvision
+sentence-transformers

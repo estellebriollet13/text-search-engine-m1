@@ -1,5 +1,6 @@
 import csv
 import math
+import pickle
 import re
 import shutil
 import sys
@@ -19,6 +20,8 @@ DATASET_REQUIRED_COLUMNS = {"Patent ID", "Title", "Abstract"}
 TEXT_COLUMNS = ("Title", "Abstract")
 TARGET_PATENT_TITLE = "Artificial intelligence robot cleaner and robot cleaning system"
 VISIBILITY_TOP_RANK = 10
+PATENTSBERTA_MODEL_NAME = "AI-Growth-Lab/PatentSBERTa"
+PATENTSBERTA_INDEX_PATH = BASE_DIR / "index_patentsberta.pkl"
 DEFAULT_COMPARISON_QUERIES = [
     "Artificial intelligence robot cleaner",
     "ARTIFICIAL INTELLIGENCE ROBOT CLEANER",
@@ -137,6 +140,10 @@ def render_search_method_tab(method_name):
         "BM25 synonymes + SPLADE": render_hybrid_bm25_splade_tab,
         "TF-IDF synonymes + SPLADE": render_hybrid_tfidf_splade_tab,
         "TF-IDF/BM25 synonymes + SPLADE": render_hybrid_tfidf_bm25_splade_tab,
+        "PatentSBERTa": render_patentsberta_tab,
+        "BM25 synonymes + PatentSBERTa": render_hybrid_bm25_patentsberta_tab,
+        "TF-IDF synonymes + PatentSBERTa": render_hybrid_tfidf_patentsberta_tab,
+        "TF-IDF/BM25 synonymes + PatentSBERTa": render_hybrid_tfidf_bm25_patentsberta_tab,
     }
 
     if method_name not in tab_renderers:
@@ -289,6 +296,70 @@ def render_hybrid_tfidf_splade_tab():
     )
 
 
+def render_patentsberta_tab():
+    render_search_tab(
+        method_key="patentsberta",
+        score_name="PatentSBERTa",
+        search_callback=lambda moteur, query: search_patentsberta(moteur, query),
+        score_description=(
+            "Score : similarité cosinus sur des embeddings brevet PatentSBERTa ; "
+            "plus il est élevé, plus le document est compatible avec la requête."
+        ),
+    )
+
+
+def render_hybrid_bm25_patentsberta_tab():
+    render_search_tab(
+        method_key="hybrid_bm25_patentsberta",
+        score_name="BM25 synonymes + PatentSBERTa",
+        search_callback=lambda moteur, query, alpha: search_hybrid_bm25_patentsberta(
+            moteur,
+            query,
+            alpha=alpha,
+        ),
+        score_description=(
+            "Score : fusion de rangs pondérée entre BM25 avec synonymes et PatentSBERTa ; "
+            "plus il est élevé, plus le document est bien placé par les deux méthodes."
+        ),
+        requires_wordnet=True,
+        hybrid_alpha_enabled=True,
+        hybrid_alpha_label="Poids PatentSBERTa",
+        hybrid_alpha_target="PatentSBERTa",
+    )
+
+
+def render_hybrid_tfidf_patentsberta_tab():
+    render_search_tab(
+        method_key="hybrid_tfidf_patentsberta",
+        score_name="TF-IDF synonymes + PatentSBERTa",
+        search_callback=lambda moteur, query: search_hybrid_tfidf_patentsberta(
+            moteur,
+            query,
+        ),
+        score_description=(
+            "Score : fusion de rangs entre TF-IDF avec synonymes et PatentSBERTa ; "
+            "plus il est élevé, plus le document est bien placé par les deux méthodes."
+        ),
+        requires_wordnet=True,
+    )
+
+
+def render_hybrid_tfidf_bm25_patentsberta_tab():
+    render_search_tab(
+        method_key="hybrid_tfidf_bm25_patentsberta",
+        score_name="TF-IDF/BM25 synonymes + PatentSBERTa",
+        search_callback=lambda moteur, query: search_hybrid_tfidf_bm25_patentsberta(
+            moteur,
+            query,
+        ),
+        score_description=(
+            "Score : fusion de rangs entre TF-IDF avec synonymes, BM25 avec synonymes et PatentSBERTa ; "
+            "plus il est élevé, plus le document est bien placé par les trois méthodes."
+        ),
+        requires_wordnet=True,
+    )
+
+
 def render_comparison_tab():
     st.subheader("Comparaison des méthodes")
     st.write(
@@ -400,6 +471,8 @@ def render_search_tab(
     tfidf_breakdown_variant=None,
     bm25_breakdown_variant=None,
     hybrid_alpha_enabled=False,
+    hybrid_alpha_label="Poids SPLADE",
+    hybrid_alpha_target="SPLADE",
 ):
     controls_col, results_col = st.columns([0.28, 0.72], gap="large")
     total_documents = count_searchable_patents()
@@ -453,14 +526,14 @@ def render_search_tab(
             )
         if hybrid_alpha_enabled:
             hybrid_alpha = st.slider(
-                "Poids SPLADE",
+                hybrid_alpha_label,
                 min_value=0.0,
                 max_value=1.0,
                 value=0.5,
                 step=0.05,
                 key=f"{method_key}_hybrid_alpha",
                 help=(
-                    "0 utilise uniquement BM25, 1 utilise uniquement SPLADE, "
+                    f"0 utilise uniquement BM25, 1 utilise uniquement {hybrid_alpha_target}, "
                     "0.5 donne le même poids aux deux classements."
                 ),
             )
@@ -956,6 +1029,10 @@ def get_search_methods():
         ("BM25 synonymes + SPLADE", lambda moteur, query: search_hybrid_bm25_splade(moteur, query)),
         ("TF-IDF synonymes + SPLADE", lambda moteur, query: search_hybrid_tfidf_splade(moteur, query)),
         ("TF-IDF/BM25 synonymes + SPLADE", lambda moteur, query: search_hybrid_tfidf_bm25_splade(moteur, query)),
+        ("PatentSBERTa", search_patentsberta),
+        ("BM25 synonymes + PatentSBERTa", lambda moteur, query: search_hybrid_bm25_patentsberta(moteur, query)),
+        ("TF-IDF synonymes + PatentSBERTa", lambda moteur, query: search_hybrid_tfidf_patentsberta(moteur, query)),
+        ("TF-IDF/BM25 synonymes + PatentSBERTa", lambda moteur, query: search_hybrid_tfidf_bm25_patentsberta(moteur, query)),
     ]
 
 
@@ -1623,6 +1700,13 @@ def get_splade_encoder():
     return SpladeEncoder(device=device)
 
 
+@st.cache_resource(show_spinner="Chargement du modèle PatentSBERTa...")
+def get_patentsberta_model():
+    from sentence_transformers import SentenceTransformer
+
+    return SentenceTransformer(PATENTSBERTA_MODEL_NAME)
+
+
 def search_splade(moteur, query):
     """
     Recherche SPLADE locale.
@@ -1711,12 +1795,176 @@ def search_hybrid_tfidf_splade(moteur, query, rrf_k=60):
     return sorted(hybrid_scores.items(), key=lambda item: item[1], reverse=True)
 
 
+def search_patentsberta(moteur, query):
+    if not query.strip():
+        return []
+
+    try:
+        vectors = get_patentsberta_vectors(moteur)
+    except Exception:
+        return []
+
+    if not vectors:
+        return []
+
+    try:
+        query_vector = encode_patentsberta_texts([query])[0]
+    except Exception:
+        return []
+
+    return score_dense_vectors(query_vector, vectors, moteur.documents)
+
+
+def search_hybrid_bm25_patentsberta(moteur, query, alpha=0.5, rrf_k=60):
+    if not query.strip():
+        return []
+
+    alpha = min(1.0, max(0.0, alpha))
+    bm25_results = moteur.chercher_bm25_synonymes(query)
+    patentsberta_results = search_patentsberta(moteur, query)
+    hybrid_scores = {}
+
+    add_rrf_scores(hybrid_scores, bm25_results, weight=1 - alpha, rrf_k=rrf_k)
+    add_rrf_scores(hybrid_scores, patentsberta_results, weight=alpha, rrf_k=rrf_k)
+
+    return sorted(hybrid_scores.items(), key=lambda item: item[1], reverse=True)
+
+
+def search_hybrid_tfidf_patentsberta(moteur, query, rrf_k=60):
+    if not query.strip():
+        return []
+
+    tfidf_results = moteur.chercher_tfidf_synonymes(query)
+    patentsberta_results = search_patentsberta(moteur, query)
+    hybrid_scores = {}
+
+    add_rrf_scores(hybrid_scores, tfidf_results, weight=0.5, rrf_k=rrf_k)
+    add_rrf_scores(hybrid_scores, patentsberta_results, weight=0.5, rrf_k=rrf_k)
+
+    return sorted(hybrid_scores.items(), key=lambda item: item[1], reverse=True)
+
+
+def search_hybrid_tfidf_bm25_patentsberta(moteur, query, rrf_k=60):
+    if not query.strip():
+        return []
+
+    tfidf_results = moteur.chercher_tfidf_synonymes(query)
+    bm25_results = moteur.chercher_bm25_synonymes(query)
+    patentsberta_results = search_patentsberta(moteur, query)
+    hybrid_scores = {}
+    weight = 1 / 3
+
+    add_rrf_scores(hybrid_scores, tfidf_results, weight=weight, rrf_k=rrf_k)
+    add_rrf_scores(hybrid_scores, bm25_results, weight=weight, rrf_k=rrf_k)
+    add_rrf_scores(hybrid_scores, patentsberta_results, weight=weight, rrf_k=rrf_k)
+
+    return sorted(hybrid_scores.items(), key=lambda item: item[1], reverse=True)
+
+
 def add_rrf_scores(hybrid_scores, results, weight, rrf_k):
     if weight == 0:
         return
 
     for rank, (doc_id, _) in enumerate(results, start=1):
         hybrid_scores[doc_id] = hybrid_scores.get(doc_id, 0.0) + weight / (rrf_k + rank)
+
+
+def get_patentsberta_vectors(moteur):
+    cached_vectors = getattr(moteur, "patentsberta_vectors", None)
+    if dense_index_matches_corpus(cached_vectors, moteur.documents):
+        return cached_vectors
+
+    cached_vectors = load_vector_index(PATENTSBERTA_INDEX_PATH)
+    if dense_index_matches_corpus(cached_vectors, moteur.documents):
+        moteur.patentsberta_vectors = trim_vector_index(cached_vectors, moteur.documents)
+        return moteur.patentsberta_vectors
+
+    print(f"Index PatentSBERTa absent ou incomplet, création du cache dans {PATENTSBERTA_INDEX_PATH}...")
+    moteur.patentsberta_vectors = index_dense_corpus(moteur.documents, label="PatentSBERTa", batch_size=32)
+    save_vector_index(PATENTSBERTA_INDEX_PATH, moteur.patentsberta_vectors)
+    print(f"Index PatentSBERTa sauvegardé dans {PATENTSBERTA_INDEX_PATH}.")
+    return moteur.patentsberta_vectors
+
+
+def index_dense_corpus(corpus, label, batch_size=32):
+    vectors = {}
+    ordered_doc_ids = sorted(corpus.keys())
+    total_docs = len(ordered_doc_ids)
+    start_time = time.perf_counter()
+
+    for start in range(0, total_docs, batch_size):
+        batch_doc_ids = ordered_doc_ids[start:start + batch_size]
+        batch_texts = [corpus[doc_id] for doc_id in batch_doc_ids]
+        batch_vectors = encode_patentsberta_texts(batch_texts)
+
+        for doc_id, vector in zip(batch_doc_ids, batch_vectors):
+            vectors[doc_id] = vector
+
+        processed_docs = min(start + batch_size, total_docs)
+        elapsed = time.perf_counter() - start_time
+        progress = processed_docs / total_docs if total_docs else 1.0
+        if processed_docs % 100 == 0 or processed_docs == total_docs:
+            speed = processed_docs / elapsed if elapsed > 0 else 0.0
+            print(
+                f"Indexation {label} en cours... {processed_docs}/{total_docs} "
+                f"documents traités ({progress * 100:.1f}%) - "
+                f"{speed:.2f} doc/s - {elapsed:.1f}s"
+            )
+
+    return vectors
+
+
+def encode_patentsberta_texts(texts):
+    embeddings = get_patentsberta_model().encode(
+        texts,
+        batch_size=32,
+        convert_to_numpy=True,
+        normalize_embeddings=True,
+        show_progress_bar=False,
+    )
+    return [
+        embedding.astype(float).tolist() if hasattr(embedding, "astype") else [float(value) for value in embedding]
+        for embedding in embeddings
+    ]
+
+
+def score_dense_vectors(query_vector, corpus_vectors, documents):
+    scores = {}
+    for doc_id, doc_vector in corpus_vectors.items():
+        if doc_id not in documents:
+            continue
+
+        score = sum(query_value * doc_value for query_value, doc_value in zip(query_vector, doc_vector))
+        scores[doc_id] = score
+
+    return sorted(scores.items(), key=lambda item: item[1], reverse=True)
+
+
+def load_vector_index(path):
+    try:
+        with path.open("rb") as index_file:
+            return pickle.load(index_file)
+    except (FileNotFoundError, EOFError, pickle.PickleError):
+        return {}
+
+
+def save_vector_index(path, vectors):
+    with path.open("wb") as index_file:
+        pickle.dump(vectors, index_file)
+
+
+def dense_index_matches_corpus(vectors, corpus):
+    if not vectors:
+        return False
+
+    return set(corpus.keys()).issubset(set(vectors.keys()))
+
+
+def trim_vector_index(vectors, corpus):
+    return {
+        doc_id: vectors[doc_id]
+        for doc_id in sorted(corpus.keys())
+    }
 
 
 @st.cache_data(show_spinner="Comptage des documents...")
