@@ -74,6 +74,18 @@ DEFAULT_COMPARISON_QUERIES = [
     "cleaning robot using AI",
     "artificial intelligence based cleaning robot",
     "robotic cleaner and cleaning control system",
+    "patent robot cleaner artificial intelligence cleaning system",
+    "prior art AI robot cleaner navigation cleaning control",
+    "autonomous robot cleaner cleaning route determination patent",
+    "robotic vacuum cleaner artificial intelligence obstacle detection",
+    "AI based cleaning robot control system patent search",
+    "robot cleaner sensor control unit cleaning path",
+    "smart robot cleaner mapping obstacle avoidance cleaning",
+    "invention robot cleaner automatically decides where to clean",
+    "robot vacuum that uses artificial intelligence to clean a room",
+    "cleaning robot with sensors and automatic route planning",
+    "machine that cleans floors by itself using AI",
+    "robot cleaner that learns the home and controls cleaning",
 ]
 
 
@@ -1233,6 +1245,14 @@ def render_family_definition_help():
             "par exemple `automaton` ou `cleanser`. Cette famille est manuelle et sert à repérer les cas qui peuvent "
             "introduire du bruit."
         )
+        st.write(
+            "**Recherche brevet / prior art** : la requête ressemble à une recherche d'ingénieur brevet ou de juriste, "
+            "avec des termes comme `patent`, `prior art`, `control`, `sensor`, `navigation` ou `obstacle detection`."
+        )
+        st.write(
+            "**Recherche utilisateur naturelle** : la requête décrit le besoin avec des mots plus courants, "
+            "par exemple une machine qui nettoie seule, apprend le logement ou décide où nettoyer."
+        )
 
 
 def build_problematic_queries(comparison_df):
@@ -1338,6 +1358,10 @@ def classify_query_family(query, target_title):
         return "Ordre des mots"
     if set(query_tokens).issubset(set(target_tokens)) and query_tokens != target_tokens:
         return "Ordre des mots"
+    if is_patent_search_query(query_tokens):
+        return "Recherche brevet / prior art"
+    if is_natural_user_query(query_tokens):
+        return "Recherche utilisateur naturelle"
     if has_plural_or_grammar_variation(query_tokens, target_tokens):
         return "Pluriel / forme grammaticale"
     if len(query_tokens) <= 1 or normalized_query in {"system", "robot", "cleaning", "artificial", "intelligence"}:
@@ -1370,6 +1394,23 @@ def has_plural_or_grammar_variation(query_tokens, target_tokens):
     target_roots = {token.rstrip("s") for token in target_tokens}
     query_roots = {token.rstrip("s") for token in query_tokens}
     return bool(query_roots & target_roots) and query_roots != set(query_tokens)
+
+
+def is_patent_search_query(query_tokens):
+    patent_markers = {
+        "patent", "prior", "art", "invention", "control", "sensor", "sensors",
+        "navigation", "mapping", "obstacle", "detection", "path", "route",
+        "planning", "search", "system",
+    }
+    return len(set(query_tokens) & patent_markers) >= 2
+
+
+def is_natural_user_query(query_tokens):
+    natural_markers = {
+        "machine", "floors", "itself", "room", "home", "learns", "decides",
+        "where", "clean", "uses", "automatically",
+    }
+    return len(set(query_tokens) & natural_markers) >= 2
 
 
 def build_presence_matrix(comparison_df, max_rank_display):
