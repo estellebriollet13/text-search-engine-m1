@@ -134,6 +134,9 @@ def render_search_method_tab(method_name):
         "TF-IDF + lemmatisation": render_tfidf_lemmatization_tab,
         "BM25 + lemmatisation": render_bm25_lemmatization_tab,
         "SPLADE": render_splade_tab,
+        "BM25 synonymes + SPLADE": render_hybrid_bm25_splade_tab,
+        "TF-IDF synonymes + SPLADE": render_hybrid_tfidf_splade_tab,
+        "TF-IDF/BM25 synonymes + SPLADE": render_hybrid_tfidf_bm25_splade_tab,
     }
 
     if method_name not in tab_renderers:
@@ -233,6 +236,56 @@ def render_splade_tab():
             "Score : score dot product sur les vecteurs creux SPLADE ; "
             "plus il est élevé, plus le document est compatible avec la requête."
         ),
+    )
+
+
+def render_hybrid_bm25_splade_tab():
+    render_search_tab(
+        method_key="hybrid_bm25_splade",
+        score_name="BM25 synonymes + SPLADE",
+        search_callback=lambda moteur, query, alpha: search_hybrid_bm25_splade(
+            moteur,
+            query,
+            alpha=alpha,
+        ),
+        score_description=(
+            "Score : fusion de rangs pondérée entre BM25 avec synonymes et SPLADE ; "
+            "plus il est élevé, plus le document est bien placé par les deux méthodes."
+        ),
+        requires_wordnet=True,
+        hybrid_alpha_enabled=True,
+    )
+
+
+def render_hybrid_tfidf_bm25_splade_tab():
+    render_search_tab(
+        method_key="hybrid_tfidf_bm25_splade",
+        score_name="TF-IDF/BM25 synonymes + SPLADE",
+        search_callback=lambda moteur, query: search_hybrid_tfidf_bm25_splade(
+            moteur,
+            query,
+        ),
+        score_description=(
+            "Score : fusion de rangs entre TF-IDF avec synonymes, BM25 avec synonymes et SPLADE ; "
+            "plus il est élevé, plus le document est bien placé par les trois méthodes."
+        ),
+        requires_wordnet=True,
+    )
+
+
+def render_hybrid_tfidf_splade_tab():
+    render_search_tab(
+        method_key="hybrid_tfidf_splade",
+        score_name="TF-IDF synonymes + SPLADE",
+        search_callback=lambda moteur, query: search_hybrid_tfidf_splade(
+            moteur,
+            query,
+        ),
+        score_description=(
+            "Score : fusion de rangs entre TF-IDF avec synonymes et SPLADE ; "
+            "plus il est élevé, plus le document est bien placé par les deux méthodes."
+        ),
+        requires_wordnet=True,
     )
 
 
@@ -346,6 +399,7 @@ def render_search_tab(
     requires_wordnet=False,
     tfidf_breakdown_variant=None,
     bm25_breakdown_variant=None,
+    hybrid_alpha_enabled=False,
 ):
     controls_col, results_col = st.columns([0.28, 0.72], gap="large")
     total_documents = count_searchable_patents()
@@ -371,6 +425,7 @@ def render_search_tab(
         )
         bm25_k1 = 1.5
         bm25_b = 0.75
+        hybrid_alpha = 0.5
         if bm25_breakdown_variant is not None:
             bm25_k1 = st.slider(
                 "BM25 k1",
@@ -394,6 +449,19 @@ def render_search_tab(
                 help=(
                     "Contrôle la correction liée à la longueur du document. "
                     "0 désactive cette correction, 1 l'applique fortement."
+                ),
+            )
+        if hybrid_alpha_enabled:
+            hybrid_alpha = st.slider(
+                "Poids SPLADE",
+                min_value=0.0,
+                max_value=1.0,
+                value=0.5,
+                step=0.05,
+                key=f"{method_key}_hybrid_alpha",
+                help=(
+                    "0 utilise uniquement BM25, 1 utilise uniquement SPLADE, "
+                    "0.5 donne le même poids aux deux classements."
                 ),
             )
 
@@ -422,7 +490,9 @@ def render_search_tab(
             render_empty_state(patents, score_name)
             return
 
-        if bm25_breakdown_variant is not None:
+        if hybrid_alpha_enabled:
+            results = search_callback(moteur, query, hybrid_alpha)
+        elif bm25_breakdown_variant is not None:
             results = search_callback(moteur, query, bm25_k1, bm25_b)
         else:
             results = search_callback(moteur, query)
@@ -883,6 +953,9 @@ def get_search_methods():
         ("TF-IDF + lemmatisation", lambda moteur, query: moteur.chercher_tfidf_lemmatise(query)),
         ("BM25 + lemmatisation", lambda moteur, query: moteur.chercher_bm25_lemmatise(query)),
         ("SPLADE", search_splade),
+        ("BM25 synonymes + SPLADE", lambda moteur, query: search_hybrid_bm25_splade(moteur, query)),
+        ("TF-IDF synonymes + SPLADE", lambda moteur, query: search_hybrid_tfidf_splade(moteur, query)),
+        ("TF-IDF/BM25 synonymes + SPLADE", lambda moteur, query: search_hybrid_tfidf_bm25_splade(moteur, query)),
     ]
 
 
@@ -1590,6 +1663,60 @@ def search_splade(moteur, query):
             scores[doc_id] = score
 
     return sorted(scores.items(), key=lambda item: item[1], reverse=True)
+
+
+def search_hybrid_bm25_splade(moteur, query, alpha=0.5, rrf_k=60):
+    if not query.strip():
+        return []
+
+    alpha = min(1.0, max(0.0, alpha))
+    bm25_results = moteur.chercher_bm25_synonymes(query)
+    splade_results = search_splade(moteur, query)
+    hybrid_scores = {}
+
+    add_rrf_scores(hybrid_scores, bm25_results, weight=1 - alpha, rrf_k=rrf_k)
+    add_rrf_scores(hybrid_scores, splade_results, weight=alpha, rrf_k=rrf_k)
+
+    return sorted(hybrid_scores.items(), key=lambda item: item[1], reverse=True)
+
+
+def search_hybrid_tfidf_bm25_splade(moteur, query, rrf_k=60):
+    if not query.strip():
+        return []
+
+    tfidf_results = moteur.chercher_tfidf_synonymes(query)
+    bm25_results = moteur.chercher_bm25_synonymes(query)
+    splade_results = search_splade(moteur, query)
+    hybrid_scores = {}
+    weight = 1 / 3
+
+    add_rrf_scores(hybrid_scores, tfidf_results, weight=weight, rrf_k=rrf_k)
+    add_rrf_scores(hybrid_scores, bm25_results, weight=weight, rrf_k=rrf_k)
+    add_rrf_scores(hybrid_scores, splade_results, weight=weight, rrf_k=rrf_k)
+
+    return sorted(hybrid_scores.items(), key=lambda item: item[1], reverse=True)
+
+
+def search_hybrid_tfidf_splade(moteur, query, rrf_k=60):
+    if not query.strip():
+        return []
+
+    tfidf_results = moteur.chercher_tfidf_synonymes(query)
+    splade_results = search_splade(moteur, query)
+    hybrid_scores = {}
+
+    add_rrf_scores(hybrid_scores, tfidf_results, weight=0.5, rrf_k=rrf_k)
+    add_rrf_scores(hybrid_scores, splade_results, weight=0.5, rrf_k=rrf_k)
+
+    return sorted(hybrid_scores.items(), key=lambda item: item[1], reverse=True)
+
+
+def add_rrf_scores(hybrid_scores, results, weight, rrf_k):
+    if weight == 0:
+        return
+
+    for rank, (doc_id, _) in enumerate(results, start=1):
+        hybrid_scores[doc_id] = hybrid_scores.get(doc_id, 0.0) + weight / (rrf_k + rank)
 
 
 @st.cache_data(show_spinner="Comptage des documents...")
