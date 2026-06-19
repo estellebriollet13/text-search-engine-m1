@@ -3,7 +3,7 @@
 # matplotlib sert a generer les graphiques dans les notebooks.
 # kagglehub sert a telecharger le dataset Kaggle depuis le README.
 # langdetect sert a estimer la langue des titres, abstracts, claims et descriptions.
-# nltk sert a utiliser WordNet pour les synonymes et la lemmatisation.
+# nltk sert a utiliser WordNet pour les synonymes, la lemmatisation et la stématisation.
 # pandas sert aux tableaux du dashboard de comparaison.
 # pinecone-text[splade] et torch servent a l'indexation locale SPLADE.
 # sentence-transformers sert au moteur dense PatentSBERTa.

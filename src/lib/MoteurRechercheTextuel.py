@@ -14,6 +14,7 @@ class MoteurRechercheTextuel:
     Structures utilisées :
     - index inversé classique pour TF-IDF et BM25 ;
     - index lemmatisé pour rapprocher des formes comme `robots` et `robot` ;
+    - index stemmatisé pour tester une normalisation morphologique plus agressive ;
     - vecteurs creux SPLADE pour la recherche sparse neuronale.
     """
 
@@ -27,12 +28,17 @@ class MoteurRechercheTextuel:
         self.tailles_documents_lemmatise = None
         self.longueur_moyenne_documents_lemmatise = 0.0
 
+        self.index_stemmatise = None
+        self.tailles_documents_stemmatise = None
+        self.longueur_moyenne_documents_stemmatise = 0.0
+
         self.corpus_vectors = {}
         self.splade_encoder = None
 
         self._wordnet = None
         self._wordnet_disponible = None
         self._lemmatizer = None
+        self._stemmer = None
 
     def _nettoyer_texte(self, texte):
         """
@@ -84,6 +90,9 @@ class MoteurRechercheTextuel:
         self.index_lemmatise = None
         self.tailles_documents_lemmatise = None
         self.longueur_moyenne_documents_lemmatise = 0.0
+        self.index_stemmatise = None
+        self.tailles_documents_stemmatise = None
+        self.longueur_moyenne_documents_stemmatise = 0.0
         mots_par_document = {}
 
         for doc_id in sorted(corpus.keys()):
@@ -105,6 +114,7 @@ class MoteurRechercheTextuel:
         self.longueur_moyenne_documents = self._calculer_longueur_moyenne_documents()
         self.corpus_vectors = {}
         self._indexer_corpus_lemmatise(mots_par_document)
+        self._indexer_corpus_stemmatise(mots_par_document)
 
     def indexer_corpus_splade(self, corpus, encoder=None, batch_size=32):
         """
@@ -206,6 +216,21 @@ class MoteurRechercheTextuel:
         self.longueur_moyenne_documents_lemmatise = (
             self._calculer_longueur_moyenne_depuis_tailles(
                 self.tailles_documents_lemmatise
+            )
+        )
+
+    def _indexer_corpus_stemmatise(self, mots_par_document):
+        """Construit l'index stemmatisé au moment de l'indexation."""
+        mots_stemmatises_par_document = {
+            doc_id: [self._stemmatiser_mot(mot) for mot in mots]
+            for doc_id, mots in mots_par_document.items()
+        }
+        self.index_stemmatise, self.tailles_documents_stemmatise = self._indexer_mots(
+            mots_stemmatises_par_document
+        )
+        self.longueur_moyenne_documents_stemmatise = (
+            self._calculer_longueur_moyenne_depuis_tailles(
+                self.tailles_documents_stemmatise
             )
         )
 
@@ -379,6 +404,30 @@ class MoteurRechercheTextuel:
         except Exception:
             return mot
 
+    def _obtenir_stemmer(self):
+        """Retourne un stemmer anglais NLTK, ou None si NLTK manque."""
+        if self._stemmer is not None:
+            return self._stemmer
+
+        try:
+            from nltk.stem import PorterStemmer
+        except Exception:
+            return None
+
+        self._stemmer = PorterStemmer()
+        return self._stemmer
+
+    def _stemmatiser_mot(self, mot):
+        """Applique une racinisation anglaise agressive, ou retourne le mot tel quel."""
+        stemmer = self._obtenir_stemmer()
+        if stemmer is None:
+            return mot
+
+        try:
+            return stemmer.stem(mot)
+        except Exception:
+            return mot
+
     def _indexer_mots(self, mots_par_document):
         """Construit un index inversé à partir d'un dictionnaire `{doc_id: [mots]}`."""
         index = {}
@@ -458,6 +507,37 @@ class MoteurRechercheTextuel:
             self.longueur_moyenne_documents_lemmatise,
         )
 
+    def _obtenir_index_stemmatise(self):
+        """Renvoie l'index stemmatisé, en le construisant si nécessaire."""
+        if self.index_stemmatise is not None:
+            return (
+                self.index_stemmatise,
+                self.tailles_documents_stemmatise,
+                self.longueur_moyenne_documents_stemmatise,
+            )
+
+        mots_par_document = {}
+        for doc_id, texte in self.documents.items():
+            mots_par_document[doc_id] = [
+                self._stemmatiser_mot(mot)
+                for mot in self._nettoyer_texte(texte)
+            ]
+
+        self.index_stemmatise, self.tailles_documents_stemmatise = self._indexer_mots(
+            mots_par_document
+        )
+        self.longueur_moyenne_documents_stemmatise = (
+            self._calculer_longueur_moyenne_depuis_tailles(
+                self.tailles_documents_stemmatise
+            )
+        )
+
+        return (
+            self.index_stemmatise,
+            self.tailles_documents_stemmatise,
+            self.longueur_moyenne_documents_stemmatise,
+        )
+
     def _synonymes_mot(self, mot, limite=12):
         """
         Retourne le mot initial et ses synonymes WordNet en un seul mot.
@@ -507,6 +587,13 @@ class MoteurRechercheTextuel:
         """Transforme chaque mot de la requête en un groupe contenant son lemme."""
         return [
             [self._lemmatiser_mot(mot)]
+            for mot in self._nettoyer_texte(requete_texte)
+        ]
+
+    def _groupes_termes_stemmatises(self, requete_texte):
+        """Transforme chaque mot de la requête en un groupe contenant son stem."""
+        return [
+            [self._stemmatiser_mot(mot)]
             for mot in self._nettoyer_texte(requete_texte)
         ]
 
@@ -744,6 +831,39 @@ class MoteurRechercheTextuel:
         donnees_index = self._obtenir_index_lemmatise()
         index, tailles_documents, longueur_moyenne_documents = donnees_index
         groupes_termes = self._groupes_termes_lemmatises(requete_texte)
+
+        return self._chercher_bm25_groupes(
+            groupes_termes,
+            index,
+            tailles_documents,
+            longueur_moyenne_documents,
+            k1=k1,
+            b=b,
+        )
+
+    def chercher_tfidf_stemmatise(self, requete_texte):
+        """
+        Recherche TF-IDF sur l'index stemmatisé.
+
+        La stématisation rapproche des variantes morphologiques plus agressivement
+        que la lemmatisation, sans expansion par synonymes.
+        """
+        donnees_index = self._obtenir_index_stemmatise()
+        index, tailles_documents, _ = donnees_index
+        groupes_termes = self._groupes_termes_stemmatises(requete_texte)
+
+        return self._chercher_tfidf_groupes(groupes_termes, index, tailles_documents)
+
+    def chercher_bm25_stemmatise(self, requete_texte, k1=1.5, b=0.75):
+        """
+        Recherche BM25 sur l'index stemmatisé.
+
+        Les mots des documents et de la requête sont comparés sous forme de stems,
+        puis les documents candidats sont classés avec BM25.
+        """
+        donnees_index = self._obtenir_index_stemmatise()
+        index, tailles_documents, longueur_moyenne_documents = donnees_index
+        groupes_termes = self._groupes_termes_stemmatises(requete_texte)
 
         return self._chercher_bm25_groupes(
             groupes_termes,

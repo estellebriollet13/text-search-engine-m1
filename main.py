@@ -1,4 +1,5 @@
 import csv
+import importlib
 import math
 import pickle
 import re
@@ -10,7 +11,10 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from src.lib.MoteurRechercheTextuel import MoteurRechercheTextuel
+import src.lib.MoteurRechercheTextuel as moteur_recherche_textuel_module
+
+moteur_recherche_textuel_module = importlib.reload(moteur_recherche_textuel_module)
+MoteurRechercheTextuel = moteur_recherche_textuel_module.MoteurRechercheTextuel
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -20,6 +24,7 @@ DATASET_REQUIRED_COLUMNS = {"Patent ID", "Title", "Abstract"}
 TEXT_COLUMNS = ("Title", "Abstract")
 TARGET_PATENT_TITLE = "Artificial intelligence robot cleaner and robot cleaning system"
 VISIBILITY_TOP_RANK = 10
+SEARCH_ENGINE_CACHE_VERSION = "stemming-v2"
 PATENTSBERTA_MODEL_NAME = "AI-Growth-Lab/PatentSBERTa"
 PATENTSBERTA_INDEX_PATH = BASE_DIR / "index_patentsberta.pkl"
 DEFAULT_COMPARISON_QUERIES = [
@@ -136,6 +141,8 @@ def render_search_method_tab(method_name):
         "BM25 + synonymes": render_bm25_synonyms_tab,
         "TF-IDF + lemmatisation": render_tfidf_lemmatization_tab,
         "BM25 + lemmatisation": render_bm25_lemmatization_tab,
+        "TF-IDF + stématisation": render_tfidf_stemming_tab,
+        "BM25 + stématisation": render_bm25_stemming_tab,
         "SPLADE": render_splade_tab,
         "BM25 synonymes + SPLADE": render_hybrid_bm25_splade_tab,
         "TF-IDF synonymes + SPLADE": render_hybrid_tfidf_splade_tab,
@@ -218,6 +225,32 @@ def render_bm25_lemmatization_tab():
         ),
         requires_wordnet=True,
         bm25_breakdown_variant="lemmatization",
+    )
+
+
+def render_tfidf_stemming_tab():
+    render_search_tab(
+        method_key="tfidf_stemming",
+        score_name="TF-IDF + stématisation",
+        search_callback=lambda moteur, query: moteur.chercher_tfidf_stemmatise(query),
+        score_description=(
+            "Score : score TF-IDF calculé après réduction des mots à leur racine ; "
+            "par exemple, cleaning, cleaned et cleaner peuvent être rapprochés."
+        ),
+        tfidf_breakdown_variant="stemming",
+    )
+
+
+def render_bm25_stemming_tab():
+    render_search_tab(
+        method_key="bm25_stemming",
+        score_name="BM25 + stématisation",
+        search_callback=lambda moteur, query, k1, b: moteur.chercher_bm25_stemmatise(query, k1=k1, b=b),
+        score_description=(
+            "Score : score BM25 calculé après réduction des mots à leur racine ; "
+            "il tient aussi compte de la fréquence des termes et de la longueur du document."
+        ),
+        bm25_breakdown_variant="stemming",
     )
 
 
@@ -409,7 +442,7 @@ def render_comparison_tab():
         if line.strip()
     ]
     patents = load_patents(max_documents)
-    moteur = build_search_engine(patents)
+    moteur = build_search_engine(patents, SEARCH_ENGINE_CACHE_VERSION)
     target_doc_id = find_patent_doc_id(patents, target_title)
 
     if target_doc_id is None:
@@ -539,7 +572,7 @@ def render_search_tab(
             )
 
     patents = load_patents(max_documents)
-    moteur = build_search_engine(patents)
+    moteur = build_search_engine(patents, SEARCH_ENGINE_CACHE_VERSION)
 
     with controls_col:
         st.metric("Documents", len(patents))
@@ -699,6 +732,9 @@ def get_tfidf_breakdown_context(moteur, query, variant):
     elif variant == "lemmatization":
         index, tailles_documents, _ = moteur._obtenir_index_lemmatise()
         groupes_termes = moteur._groupes_termes_lemmatises(query)
+    elif variant == "stemming":
+        index, tailles_documents, _ = moteur._obtenir_index_stemmatise()
+        groupes_termes = moteur._groupes_termes_stemmatises(query)
     else:
         index = moteur.index
         tailles_documents = moteur.tailles_documents
@@ -797,6 +833,9 @@ def get_bm25_breakdown_context(moteur, query, variant):
     elif variant == "lemmatization":
         index, tailles_documents, longueur_moyenne_documents = moteur._obtenir_index_lemmatise()
         groupes_termes = moteur._groupes_termes_lemmatises(query)
+    elif variant == "stemming":
+        index, tailles_documents, longueur_moyenne_documents = moteur._obtenir_index_stemmatise()
+        groupes_termes = moteur._groupes_termes_stemmatises(query)
     else:
         index = moteur.index
         tailles_documents = moteur.tailles_documents
@@ -880,7 +919,8 @@ def render_comparison_definitions():
         st.write(
             "**Taille des documents dans BM25** : elle est calculée automatiquement pendant l'indexation. "
             "Pour chaque document, on compte le nombre de mots nettoyés. La longueur moyenne est ensuite calculée "
-            "sur les documents non vides. Les variantes avec lemmatisation utilisent la longueur de l'index lemmatisé."
+            "sur les documents non vides. Les variantes avec lemmatisation ou stématisation utilisent la longueur "
+            "de leur index normalisé."
         )
         st.write(
             "**Rang dashboard** : position de la méthode dans le classement synthétique du dashboard. "
@@ -1025,6 +1065,8 @@ def get_search_methods():
         ("BM25 + synonymes", lambda moteur, query: moteur.chercher_bm25_synonymes(query)),
         ("TF-IDF + lemmatisation", lambda moteur, query: moteur.chercher_tfidf_lemmatise(query)),
         ("BM25 + lemmatisation", lambda moteur, query: moteur.chercher_bm25_lemmatise(query)),
+        ("TF-IDF + stématisation", lambda moteur, query: moteur.chercher_tfidf_stemmatise(query)),
+        ("BM25 + stématisation", lambda moteur, query: moteur.chercher_bm25_stemmatise(query)),
         ("SPLADE", search_splade),
         ("BM25 synonymes + SPLADE", lambda moteur, query: search_hybrid_bm25_splade(moteur, query)),
         ("TF-IDF synonymes + SPLADE", lambda moteur, query: search_hybrid_tfidf_splade(moteur, query)),
@@ -1147,7 +1189,7 @@ def build_method_decision(row):
         return "Stable mais moins couvrant"
     if row["temps moyen (ms)"] <= 1.2 and success_rate < 60:
         return "Rapide mais moins efficace"
-    if "synonymes" in method_name or "lemmatisation" in method_name:
+    if "synonymes" in method_name or "lemmatisation" in method_name or "stématisation" in method_name:
         return "Coûteux pour un gain limité"
     return "Baseline simple"
 
@@ -2018,7 +2060,8 @@ def load_patents(max_documents):
 
 
 @st.cache_resource(show_spinner="Indexation du corpus...")
-def build_search_engine(patents):
+def build_search_engine(patents, cache_version):
+    _ = cache_version
     corpus = {
         doc_id: patent["search_text"]
         for doc_id, patent in patents.items()
