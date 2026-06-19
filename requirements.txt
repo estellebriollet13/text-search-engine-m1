@@ -18,3 +18,4 @@ pandas
 pinecone-text[splade]
 torch
 streamlit
+torchvision
