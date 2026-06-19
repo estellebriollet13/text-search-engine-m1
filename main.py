@@ -751,7 +751,7 @@ def render_comparison_definitions():
             "Par exemple, `1` veut dire qu'au moins une variante place le brevet en premier."
         )
         st.write(
-            "**Rang moyen** : position moyenne du brevet cible dans les résultats quand il est retrouvé. "
+            "**Rang moyen** : position moyenne du brevet cible uniquement quand il apparaît dans le rang maximal considéré. "
             "Rang 1 signifie premier résultat ; plus le rang moyen est bas, meilleure est la méthode."
         )
         st.write(
@@ -924,8 +924,8 @@ def build_comparison_summary(comparison_df, max_rank_display):
     for method_name, method_df in comparison_df.groupby("méthode", sort=False):
         found_df = method_df[method_df["trouvé"]]
         top_rank_df = found_df[found_df["rang"] <= max_rank_display]
-        best_rank = int(found_df["rang"].min()) if not found_df.empty else None
-        average_rank = round(found_df["rang"].mean(), 2) if not found_df.empty else None
+        best_rank = int(top_rank_df["rang"].min()) if not top_rank_df.empty else None
+        average_rank = round(top_rank_df["rang"].mean(), 2) if not top_rank_df.empty else None
         found_count = int(found_df.shape[0])
         top_count = int(top_rank_df.shape[0])
         average_time = round(method_df["temps (ms)"].mean(), 2)
