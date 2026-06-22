@@ -1277,6 +1277,7 @@ def build_target_quality_dataframe(moteur, patents, evaluation_targets, top_k):
                             run_id,
                             method_name,
                             target_rank,
+                            top_k,
                             elapsed_ms,
                             error_message,
                         )
@@ -1319,7 +1320,7 @@ def build_target_quality_dataframe(moteur, patents, evaluation_targets, top_k):
     return pd.DataFrame(rows)
 
 
-def build_empty_target_quality_row(target, query, run_id, method_name, target_rank, elapsed_ms, error_message):
+def build_empty_target_quality_row(target, query, run_id, method_name, target_rank, top_k, elapsed_ms, error_message):
     justification = "Aucun résultat retourné pour cette requête."
     if error_message:
         justification = f"Méthode indisponible ou en erreur : {error_message}"
