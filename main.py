@@ -1,5 +1,6 @@
 import csv
 import math
+import random
 import re
 import shutil
 import sys
@@ -19,6 +20,21 @@ DATASET_REQUIRED_COLUMNS = {"Patent ID", "Title", "Abstract"}
 TEXT_COLUMNS = ("Title", "Abstract")
 TARGET_PATENT_TITLE = "Artificial intelligence robot cleaner and robot cleaning system"
 VISIBILITY_TOP_RANK = 10
+EVALUATION_TARGET_COUNT = 10
+EVALUATION_RANDOM_STATE = 42
+GENERIC_TITLE_TERMS = {
+    "apparatus", "device", "method", "methods", "process", "system", "systems",
+    "composition", "compositions", "use", "uses",
+}
+IMPORTANT_TERM_STOPWORDS = {
+    "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "has",
+    "in", "is", "it", "its", "of", "on", "or", "that", "the", "to", "was",
+    "were", "with", "without", "using", "used", "use", "uses", "via", "into",
+    "over", "under", "between", "after", "before", "during", "while", "within",
+    "based", "thereof", "therefor", "wherein", "said", "same", "new", "improved",
+    "method", "methods", "system", "systems", "apparatus", "device", "devices",
+    "process", "composition", "compositions", "means", "unit", "module",
+}
 DEFAULT_COMPARISON_QUERIES = [
     "Artificial intelligence robot cleaner",
     "ARTIFICIAL INTELLIGENCE ROBOT CLEANER",
@@ -86,9 +102,17 @@ DEFAULT_COMPARISON_QUERIES = [
     "cleaning robot with sensors and automatic route planning",
     "machine that cleans floors by itself using AI",
     "robot cleaner that learns the home and controls cleaning",
+    "robot clenaer xylophone banana invoice navigation",
+    "roobt cleaner qzxv malware",
+    "artificial intelligence robot cleaner aspirin glucose tumor",
+    "automoton cleaaner system",
+    "robto cleaenr navigashun systme",
+    "robot cleaner toaster cryptocurrency football",
+    "AI robot cleaner patient chemotherapy diagnosis",
+    "robot vacuum blorpt spleen cloud banana",
+    "artificial intellignce rboto clenaer",
+    "cleaning robot blockchain tax recipe",
 ]
-
-
 def main():
     st.set_page_config(
         page_title="Moteur de recherche textuel",
@@ -238,6 +262,23 @@ def render_splade_tab():
 
 def render_comparison_tab():
     st.subheader("Comparaison des méthodes")
+    st.write(
+        "Le premier dashboard mesure la retrouvabilité d'un brevet cible. "
+        "Le second mesure la qualité globale des résultats retournés dans le top K."
+    )
+    retrievability_tab, quality_tab = st.tabs([
+        "Retrouvabilité du brevet cible",
+        "Évaluation de la qualité du top 10",
+    ])
+
+    with retrievability_tab:
+        render_target_retrievability_dashboard()
+
+    with quality_tab:
+        render_evaluation_targets_section()
+
+
+def render_target_retrievability_dashboard():
     st.write(
         "Ce tableau de bord teste si un brevet cible reste retrouvable quand la requête change "
         "de casse, d'ordre, de forme grammaticale ou de vocabulaire."
@@ -875,6 +916,736 @@ def render_comparison_details(comparison_df, summary_df):
     st.dataframe(detail_df, hide_index=True, use_container_width=True)
 
 
+def render_evaluation_targets_section():
+    st.subheader("Évaluation de la qualité du top 10")
+    st.write(
+        "Ce dashboard teste les variantes de requêtes de plusieurs vrais brevets cibles sur toutes les méthodes. "
+        "Il mesure à la fois si le brevet cible est retrouvé et si les documents promus dans le top K "
+        "parlent bien du même sujet."
+    )
+    st.caption(
+        "Cette évaluation reste heuristique : elle repose sur des termes attendus extraits du brevet cible "
+        "et des termes hors sujet construits depuis les autres cibles. Elle complète le dashboard de retrouvabilité "
+        "sans le remplacer."
+    )
+
+    total_documents = count_searchable_patents()
+    slider_max = max(1, total_documents)
+    controls_col, info_col = st.columns([0.32, 0.68], gap="large")
+
+    with controls_col:
+        max_documents = st.slider(
+            "Documents utilisés pour sélectionner les cibles",
+            min_value=1,
+            max_value=slider_max,
+            value=min(12000, slider_max),
+            step=1,
+            key="evaluation_targets_max_documents",
+        )
+        top_k = st.slider(
+            "Rang maximal analysé",
+            min_value=3,
+            max_value=20,
+            value=10,
+            step=1,
+            key="target_quality_top_k",
+        )
+
+    with info_col:
+        st.info(
+            f"Sélection reproductible de {EVALUATION_TARGET_COUNT} cibles avec "
+            f"random_state={EVALUATION_RANDOM_STATE}. Pour chaque brevet, 10 variantes de requête "
+            "sont générées automatiquement."
+        )
+
+    patents = load_patents(max_documents)
+    evaluation_targets = build_evaluation_targets(
+        patents,
+        target_count=EVALUATION_TARGET_COUNT,
+        random_state=EVALUATION_RANDOM_STATE,
+    )
+
+    if len(evaluation_targets) < EVALUATION_TARGET_COUNT:
+        st.warning(
+            f"{len(evaluation_targets)} brevet(s) cible(s) seulement ont passé les filtres. "
+            "Augmentez le nombre de documents utilisés si nécessaire."
+        )
+    else:
+        st.success(f"{len(evaluation_targets)} brevets cibles sélectionnés.")
+
+    st.subheader("1. Cibles et variantes générées")
+    st.dataframe(
+        build_evaluation_targets_display(evaluation_targets),
+        hide_index=True,
+        use_container_width=True,
+    )
+
+    if not st.button("Lancer l'évaluation", key="run_target_quality_evaluation"):
+        st.info("Lancez l'évaluation pour calculer la synthèse, la matrice et les requêtes les plus bruitées.")
+        return
+
+    moteur = build_search_engine(patents)
+    if moteur.wordnet_est_disponible():
+        st.caption("WordNet est disponible : synonymes et lemmatisation sont actifs.")
+    else:
+        st.warning(
+            "WordNet n'est pas disponible localement : les variantes synonymes/lemmatisation "
+            "retomberont sur le comportement lexical simple."
+        )
+
+    quality_df = build_target_quality_dataframe(moteur, patents, evaluation_targets, top_k)
+    if quality_df.empty:
+        st.warning("Aucun résultat exploitable pour cette évaluation.")
+        return
+
+    summary_df = build_target_quality_summary(quality_df, top_k)
+    matrix_df = build_target_quality_matrix(quality_df, top_k)
+    noisy_df = build_noisy_results_summary(quality_df, top_k)
+
+    st.subheader("2. Synthèse par méthode")
+    render_target_quality_definitions(top_k)
+    st.dataframe(summary_df, hide_index=True, use_container_width=True)
+
+    st.subheader("3. Matrice de cohérence sujet")
+    st.caption(
+        f"Chaque cellule affiche le score moyen de cohérence sujet du top {top_k}. "
+        "0 signifie que la méthode ne retourne rien pour cette requête ou que les résultats sont très hors domaine."
+    )
+    st.dataframe(
+        matrix_df.style.format("{:.0f}").background_gradient(axis=None, cmap="Greens", vmin=0, vmax=100),
+        use_container_width=True,
+    )
+
+    st.subheader("4. Requêtes qui génèrent le plus de bruit")
+    render_noisy_results_summary(noisy_df, top_k)
+
+
+def build_evaluation_targets(patents, target_count=10, random_state=42):
+    candidates = []
+    for doc_id, patent in patents.items():
+        if not is_usable_evaluation_target(patent):
+            continue
+        title_terms = extract_important_terms(patent["title"], max_terms=10)
+        if len(title_terms) < 3:
+            continue
+        candidates.append((doc_id, patent, title_terms))
+
+    rng = random.Random(random_state)
+    rng.shuffle(candidates)
+
+    selected = []
+    selected_term_sets = []
+    for doc_id, patent, title_terms in candidates:
+        term_set = set(title_terms)
+        if is_diverse_target(term_set, selected_term_sets):
+            selected.append((doc_id, patent, title_terms))
+            selected_term_sets.append(term_set)
+        if len(selected) >= target_count:
+            break
+
+    if len(selected) < target_count:
+        selected_doc_ids = {doc_id for doc_id, _, _ in selected}
+        for doc_id, patent, title_terms in candidates:
+            if doc_id in selected_doc_ids:
+                continue
+            selected.append((doc_id, patent, title_terms))
+            if len(selected) >= target_count:
+                break
+
+    targets_without_negatives = []
+    for doc_id, patent, title_terms in selected[:target_count]:
+        positive_terms = build_positive_terms(patent, title_terms)
+        targets_without_negatives.append(
+            {
+                "target_doc_id": doc_id,
+                "patent_id": patent["patent_id"],
+                "title": patent["title"],
+                "abstract": patent["abstract"],
+                "positive_terms": positive_terms,
+                "negative_terms": [],
+                "queries": [],
+            }
+        )
+
+    for target in targets_without_negatives:
+        target["negative_terms"] = build_negative_terms(target, targets_without_negatives)
+        target["queries"] = generate_target_query_variants(target)
+
+    return targets_without_negatives
+
+
+def is_usable_evaluation_target(patent):
+    title = clean_value(patent.get("title"))
+    abstract = clean_value(patent.get("abstract"))
+    if not title or not abstract:
+        return False
+    title_tokens = normalize_for_family(title).split()
+    if len(title_tokens) < 4:
+        return False
+    meaningful_tokens = [token for token in title_tokens if token not in GENERIC_TITLE_TERMS]
+    if len(meaningful_tokens) < 3:
+        return False
+    if set(title_tokens).issubset(GENERIC_TITLE_TERMS):
+        return False
+    return True
+
+
+def is_diverse_target(term_set, selected_term_sets, max_overlap=0.35):
+    if not selected_term_sets:
+        return True
+    for selected_terms in selected_term_sets:
+        union = term_set | selected_terms
+        if not union:
+            continue
+        overlap = len(term_set & selected_terms) / len(union)
+        if overlap > max_overlap:
+            return False
+    return True
+
+
+def build_positive_terms(patent, title_terms):
+    positive_terms = list(title_terms[:7])
+    abstract_terms = extract_important_terms(patent["abstract"], max_terms=8)
+    for term in abstract_terms:
+        if term not in positive_terms:
+            positive_terms.append(term)
+        if len(positive_terms) >= 10:
+            break
+    return positive_terms
+
+
+def build_negative_terms(target, all_targets, max_terms=10):
+    target_terms = set(target["positive_terms"])
+    negative_terms = []
+    for other_target in all_targets:
+        if other_target["target_doc_id"] == target["target_doc_id"]:
+            continue
+        for term in other_target["positive_terms"]:
+            if term in target_terms or term in negative_terms:
+                continue
+            negative_terms.append(term)
+            if len(negative_terms) >= max_terms:
+                return negative_terms
+    return negative_terms
+
+
+def generate_target_query_variants(target):
+    title = target["title"]
+    positive_terms = target["positive_terms"]
+    important_title_terms = extract_important_terms(title, max_terms=8)
+    query_terms = important_title_terms or positive_terms
+    negative_terms = target["negative_terms"]
+    variants = [
+        title,
+        title.lower(),
+    ]
+
+    if len(query_terms) >= 3:
+        variants.append(" ".join(reversed(query_terms[:5])))
+        variants.append(" ".join(query_terms[:4]))
+    if query_terms:
+        variants.append(" ".join(query_terms[:2]))
+        variants.append(query_terms[0])
+    if len(query_terms) >= 3:
+        variants.append(" ".join(query_terms[1:4]))
+    if len(query_terms) >= 5:
+        variants.append(" ".join([query_terms[0], query_terms[2], query_terms[4]]))
+
+    grammar_variant = build_grammar_query_variant(query_terms)
+    if grammar_variant:
+        variants.append(grammar_variant)
+
+    if len(query_terms) >= 2:
+        variants.append(f"prior art {query_terms[0]} {query_terms[1]}")
+
+    if negative_terms and query_terms:
+        variants.append(f"{query_terms[0]} {negative_terms[0]}")
+
+    variants = deduplicate_preserving_order(variants)
+    fallback_variants = build_fallback_query_variants(title, query_terms, negative_terms)
+    variants = deduplicate_preserving_order(variants + fallback_variants)
+    return variants[:10]
+
+
+def build_fallback_query_variants(title, query_terms, negative_terms):
+    variants = []
+    if query_terms:
+        variants.append(f"{query_terms[0]} patent")
+        variants.append(f"{query_terms[0]} invention")
+        variants.append(f"{query_terms[0]} technology")
+        variants.append(f"{query_terms[0]} search")
+    if len(query_terms) >= 2:
+        variants.append(f"{query_terms[0]} {query_terms[-1]}")
+        variants.append(f"{query_terms[-1]} {query_terms[0]}")
+        variants.append(f"{query_terms[0]} {query_terms[1]} patent search")
+    if len(query_terms) >= 3:
+        variants.append(" ".join(query_terms[:3]))
+        variants.append(" ".join(query_terms[-3:]))
+        variants.append(f"{query_terms[0]} {query_terms[1]} {query_terms[2]} prior art")
+        variants.append(f"{query_terms[2]} {query_terms[0]} {query_terms[1]}")
+    if negative_terms and query_terms:
+        variants.append(f"{query_terms[0]} {negative_terms[0]}")
+    variants.append(remove_punctuation(title).lower())
+    return variants
+
+
+def build_grammar_query_variant(terms):
+    varied_terms = []
+    changed = False
+    for term in terms[:4]:
+        if term.endswith("y") and len(term) > 3:
+            varied_terms.append(term[:-1] + "ies")
+            changed = True
+        elif not term.endswith("s") and len(term) > 3:
+            varied_terms.append(term + "s")
+            changed = True
+        else:
+            varied_terms.append(term)
+    if changed and varied_terms:
+        return " ".join(varied_terms)
+    return ""
+
+
+def extract_important_terms(text, max_terms=8):
+    terms = []
+    for token in normalize_for_family(text).split():
+        if len(token) < 3:
+            continue
+        if token in IMPORTANT_TERM_STOPWORDS:
+            continue
+        if token.isdigit():
+            continue
+        if token not in terms:
+            terms.append(token)
+        if len(terms) >= max_terms:
+            break
+    return terms
+
+
+def deduplicate_preserving_order(values):
+    seen = set()
+    unique_values = []
+    for value in values:
+        normalized_value = normalize_for_family(value)
+        if not normalized_value or normalized_value in seen:
+            continue
+        seen.add(normalized_value)
+        unique_values.append(value)
+    return unique_values
+
+
+def build_evaluation_targets_display(evaluation_targets):
+    rows = []
+    for target in evaluation_targets:
+        rows.append(
+            {
+                "doc_id": target["target_doc_id"],
+                "patent_id": target["patent_id"],
+                "titre": target["title"],
+                "abstract court": shorten_text(target["abstract"], max_words=35),
+                "positive_terms": ", ".join(target["positive_terms"]),
+                "negative_terms": ", ".join(target["negative_terms"]),
+                "variantes de requêtes": "\n".join(target["queries"]),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def build_target_quality_dataframe(moteur, patents, evaluation_targets, top_k):
+    rows = []
+
+    for target in evaluation_targets:
+        for query in target["queries"]:
+            run_id = f"{target['target_doc_id']}::{query}"
+            for method_name, search_callback in get_search_methods():
+                start_time = time.perf_counter()
+                try:
+                    results = search_callback(moteur, query)
+                    error_message = ""
+                except Exception as error:
+                    results = []
+                    error_message = str(error)
+                elapsed_ms = (time.perf_counter() - start_time) * 1000
+                target_rank, _ = find_result_rank_and_score(results, target["target_doc_id"])
+                top_results = results[:top_k]
+
+                if not top_results:
+                    rows.append(
+                        build_empty_target_quality_row(
+                            target,
+                            query,
+                            run_id,
+                            method_name,
+                            target_rank,
+                            top_k,
+                            elapsed_ms,
+                            error_message,
+                        )
+                    )
+                    continue
+
+                for rank, (doc_id, internal_score) in enumerate(top_results, start=1):
+                    patent = patents[doc_id]
+                    relevance = score_result_relevance(
+                        patent["title"],
+                        patent["abstract"],
+                        target["positive_terms"],
+                        target["negative_terms"],
+                    )
+                    is_noisy = relevance["score"] < 50 or bool(relevance["negative_matches"])
+                    rows.append(
+                        {
+                            "run_id": run_id,
+                            "target_doc_id": target["target_doc_id"],
+                            "target_title": target["title"],
+                            "target_patent_id": target["patent_id"],
+                            "requête": query,
+                            "méthode": method_name,
+                            "target_rank": target_rank,
+                            "cible retrouvée": target_rank is not None and target_rank <= top_k,
+                            "rang": rank,
+                            "score interne": internal_score,
+                            "titre": patent["title"],
+                            "abstract court": shorten_text(patent["abstract"]),
+                            "score cohérence": relevance["score"],
+                            "hors domaine": is_noisy,
+                            "termes positifs retrouvés": ", ".join(relevance["positive_matches"]),
+                            "termes négatifs retrouvés": ", ".join(relevance["negative_matches"]),
+                            "justification": relevance["justification"],
+                            "temps (ms)": elapsed_ms,
+                            "résultat retourné": True,
+                        }
+                    )
+
+    return pd.DataFrame(rows)
+
+
+def build_empty_target_quality_row(target, query, run_id, method_name, target_rank, top_k, elapsed_ms, error_message):
+    justification = "Aucun résultat retourné pour cette requête."
+    if error_message:
+        justification = f"Méthode indisponible ou en erreur : {error_message}"
+
+    return {
+        "run_id": run_id,
+        "target_doc_id": target["target_doc_id"],
+        "target_title": target["title"],
+        "target_patent_id": target["patent_id"],
+        "requête": query,
+        "méthode": method_name,
+        "target_rank": target_rank,
+        "cible retrouvée": target_rank is not None and target_rank <= top_k,
+        "rang": None,
+        "score interne": 0.0,
+        "titre": "Aucun résultat",
+        "abstract court": "",
+        "score cohérence": 0,
+        "hors domaine": True,
+        "termes positifs retrouvés": "",
+        "termes négatifs retrouvés": "",
+        "justification": justification,
+        "temps (ms)": elapsed_ms,
+        "résultat retourné": False,
+    }
+
+
+def score_result_relevance(title, abstract, positive_terms, negative_terms):
+    title_text = clean_value(title)
+    text = f"{title_text} {clean_value(abstract)}"
+    normalized_title = normalize_for_family(title_text)
+    normalized_text = normalize_for_family(text)
+    title_tokens = set(normalized_title.split())
+    text_tokens = set(normalized_text.split())
+    positive_matches = find_matching_terms(positive_terms, normalized_text, text_tokens)
+    negative_matches = find_matching_terms(negative_terms, normalized_text, text_tokens)
+    title_positive_matches = find_matching_terms(positive_terms, normalized_title, title_tokens)
+    title_negative_matches = find_matching_terms(negative_terms, normalized_title, title_tokens)
+
+    positive_count = len(positive_terms)
+    coverage = len(positive_matches) / positive_count if positive_count else 0.0
+    base_score = coverage * 65
+    positive_bonus = min(15, max(0, len(positive_matches) - 1) * 3)
+    title_bonus = min(20, len(title_positive_matches) * 5)
+    negative_penalty = min(50, len(negative_matches) * 8 + len(title_negative_matches) * 10)
+    score = max(0, min(100, base_score + positive_bonus + title_bonus - negative_penalty))
+
+    if positive_matches and negative_matches:
+        justification = (
+            f"{len(positive_matches)} terme(s) attendu(s) retrouvés, "
+            f"mais {len(negative_matches)} terme(s) hors thème détectés."
+        )
+    elif title_positive_matches:
+        justification = f"{len(title_positive_matches)} terme(s) attendu(s) retrouvés directement dans le titre."
+    elif positive_matches:
+        justification = f"{len(positive_matches)} terme(s) attendu(s) retrouvés dans le titre ou l'abstract."
+    elif negative_matches:
+        justification = "Aucun terme attendu fort, avec des indices hors thème."
+    else:
+        justification = "Peu ou pas d'indices lexicaux reliés à la requête."
+
+    return {
+        "score": int(round(score)),
+        "positive_matches": positive_matches,
+        "negative_matches": negative_matches,
+        "justification": justification,
+    }
+
+
+def find_matching_terms(terms, normalized_text, text_tokens):
+    matches = []
+    for term in terms:
+        normalized_term = normalize_for_family(term)
+        if not normalized_term:
+            continue
+        term_tokens = normalized_term.split()
+        if len(term_tokens) == 1 and term_tokens[0] in text_tokens:
+            matches.append(term)
+        elif len(term_tokens) > 1 and normalized_term in normalized_text:
+            matches.append(term)
+    return matches
+
+
+def build_target_quality_summary(quality_df, top_k, relevance_threshold=50):
+    rows = []
+
+    for method_name, _ in get_search_methods():
+        method_df = quality_df[quality_df["méthode"] == method_name]
+        run_groups = method_df.groupby("run_id", sort=False)
+        run_count = len(run_groups)
+        top_k_means = []
+        top_3_means = []
+        relevant_counts = []
+        precision_values = []
+        noisy_rates = []
+        noisy_counts = []
+        elapsed_values = []
+        target_ranks = []
+        found_count = 0
+
+        for _, query_df in run_groups:
+            returned_df = query_df[query_df["résultat retourné"]]
+            top_k_df = returned_df[returned_df["rang"] <= top_k]
+            top_3_df = returned_df[returned_df["rang"] <= 3]
+            relevant_count = int((top_k_df["score cohérence"] >= relevance_threshold).sum())
+            noisy_count = int(top_k_df["hors domaine"].sum()) if not top_k_df.empty else top_k
+            target_rank = query_df["target_rank"].iloc[0]
+
+            top_k_means.append(top_k_df["score cohérence"].mean() if not top_k_df.empty else 0.0)
+            top_3_means.append(top_3_df["score cohérence"].mean() if not top_3_df.empty else 0.0)
+            relevant_counts.append(relevant_count)
+            precision_values.append((relevant_count / top_k) * 100)
+            noisy_counts.append(noisy_count)
+            noisy_rates.append((noisy_count / top_k) * 100)
+            elapsed_values.append(query_df["temps (ms)"].iloc[0])
+            if pd.notna(target_rank) and target_rank <= top_k:
+                found_count += 1
+                target_ranks.append(target_rank)
+
+        average_top_k = average_number(top_k_means)
+        average_top_3 = average_number(top_3_means)
+        precision_at_k = average_number(precision_values)
+        average_relevant_count = average_number(relevant_counts)
+        average_noisy_count = average_number(noisy_counts)
+        average_noisy_rate = average_number(noisy_rates)
+        average_time = average_number(elapsed_values)
+        retrievability = (found_count / run_count) * 100 if run_count else 0.0
+        average_target_rank = average_number(target_ranks) if target_ranks else None
+
+        rows.append(
+            {
+                "Méthode": method_name,
+                "Taux de réussite": round(retrievability, 1),
+                "Rang moyen cible": round(average_target_rank, 2) if average_target_rank is not None else None,
+                f"Cohérence sujet moyenne top {top_k}": int(round(average_top_k)),
+                "Cohérence sujet moyenne top 3": int(round(average_top_3)),
+                f"Precision@{top_k} heuristique": round(precision_at_k, 1),
+                "Nombre moyen de résultats pertinents": round(average_relevant_count, 2),
+                f"Taux hors domaine top {top_k}": round(average_noisy_rate, 1),
+                "Nombre moyen hors domaine": round(average_noisy_count, 2),
+                "Temps moyen (ms)": round(average_time, 2),
+                "Lecture rapide": build_target_quality_reading(
+                    retrievability,
+                    average_target_rank,
+                    average_top_k,
+                    average_noisy_rate,
+                ),
+            }
+        )
+
+    return pd.DataFrame(rows).sort_values(
+        ["Taux de réussite", f"Taux hors domaine top {top_k}", f"Cohérence sujet moyenne top {top_k}"],
+        ascending=[False, True, False],
+    ).reset_index(drop=True)
+
+
+def average_number(values):
+    if not values:
+        return 0.0
+    return sum(values) / len(values)
+
+
+def build_target_quality_reading(retrievability, average_target_rank, average_top_k, average_noisy_rate):
+    if retrievability >= 80 and average_noisy_rate <= 20:
+        return "Retrouve souvent la cible avec peu de bruit"
+    if retrievability >= 70:
+        return "Bonne réussite, bruit à surveiller"
+    if average_noisy_rate <= 25 and average_top_k >= 60:
+        return "Résultats plutôt cohérents mais cible moins stable"
+    if retrievability > 0:
+        return "Résultats irréguliers selon les variantes"
+    return "Ne retrouve pas les cibles sur ce jeu"
+
+
+def build_target_quality_matrix(quality_df, top_k):
+    matrix_source = quality_df[
+        quality_df["résultat retourné"]
+        & quality_df["rang"].notna()
+        & (quality_df["rang"] <= top_k)
+    ].copy()
+    if matrix_source.empty:
+        return pd.DataFrame()
+
+    matrix_source["ligne"] = matrix_source.apply(
+        lambda row: f"Doc {row['target_doc_id']} | {row['requête']}",
+        axis=1,
+    )
+    matrix = matrix_source.pivot_table(
+        index="ligne",
+        columns="méthode",
+        values="score cohérence",
+        aggfunc=lambda values: round(values.mean(), 1),
+        fill_value=0,
+        sort=False,
+    )
+    return matrix
+
+
+def render_target_quality_definitions(top_k):
+    with st.expander("Définitions des métriques", expanded=False):
+        st.write(
+            "**Taux de réussite** : pourcentage des variantes de requête où le brevet cible est retrouvé "
+            f"dans le top {top_k}. "
+            "`requêtes où la cible est visible / nombre total de variantes × 100`."
+        )
+        st.write(
+            "**Rang moyen cible** : position moyenne du brevet cible uniquement lorsqu'il est retrouvé. "
+            f"Plus le rang est bas, mieux c'est. Les variantes où la cible n'est pas retrouvée dans le top {top_k} "
+            "ne sont pas incluses dans cette moyenne."
+        )
+        st.write(
+            f"**Cohérence sujet moyenne top {top_k}** : score moyen entre 0 et 100 calculé sur les résultats analysés. "
+            "Le score monte quand les termes attendus du brevet cible apparaissent, surtout dans le titre, "
+            "et baisse quand des termes hors sujet apparaissent. C'est une mesure de bruit : plus le score est bas, "
+            "plus les résultats sortent du domaine attendu."
+        )
+        st.write(
+            "**Cohérence sujet moyenne top 3** : même calcul que la cohérence du top analysé, mais limité aux trois premiers résultats. "
+            "Elle indique si les tout premiers brevets affichés sont propres ou déjà bruités."
+        )
+        st.write(
+            f"**Nombre moyen de résultats pertinents** : nombre moyen de résultats du top {top_k} dont le score de cohérence est "
+            "supérieur ou égal à 50. Formule : `somme des résultats cohérents dans le top analysé / nombre de variantes testées`."
+        )
+        st.write(
+            f"**Taux hors domaine top {top_k}** : part des résultats du top {top_k} considérés comme bruités. "
+            "Un résultat est bruité s'il contient des termes négatifs ou si son score de cohérence est inférieur à 50. "
+            "Formule : `résultats hors domaine / résultats analysés × 100`."
+        )
+        st.write(
+            f"**Nombre moyen hors domaine** : nombre moyen de brevets bruités dans le top {top_k}. "
+            "C'est l'indicateur le plus direct pour voir quelle méthode ramène des brevets qui n'ont rien à voir."
+        )
+        st.write(
+            f"**Precision@{top_k} heuristique** : part des résultats du top {top_k} dont le score de cohérence est supérieur ou égal à 50. "
+            "Formule : `résultats cohérents / résultats analysés × 100`."
+        )
+        st.write(
+            "**Temps moyen** : temps moyen d'exécution d'une variante de requête pour une méthode donnée."
+        )
+
+
+def build_noisy_results_summary(quality_df, top_k, limit=25):
+    rows = []
+    grouped = quality_df.groupby(["run_id", "méthode"], sort=False)
+    for (_, method_name), group_df in grouped:
+        returned_df = group_df[
+            group_df["résultat retourné"]
+            & group_df["rang"].notna()
+            & (group_df["rang"] <= top_k)
+        ]
+        noisy_df = returned_df[returned_df["hors domaine"]]
+        noisy_count = int(noisy_df.shape[0])
+        if noisy_count == 0:
+            continue
+        target_rank = group_df["target_rank"].iloc[0]
+        rows.append(
+            {
+                "doc_id cible": int(group_df["target_doc_id"].iloc[0]),
+                "brevet cible": group_df["target_title"].iloc[0],
+                "requête": group_df["requête"].iloc[0],
+                "méthode": method_name,
+                f"résultats hors domaine top {top_k}": noisy_count,
+                f"taux hors domaine top {top_k}": round((noisy_count / top_k) * 100, 1),
+                "score cohérence moyen": int(round(returned_df["score cohérence"].mean())) if not returned_df.empty else 0,
+                "rang cible": None if pd.isna(target_rank) else int(target_rank),
+                "exemples hors domaine": build_noisy_examples(noisy_df),
+            }
+        )
+
+    if not rows:
+        return pd.DataFrame()
+
+    return pd.DataFrame(rows).sort_values(
+        [f"résultats hors domaine top {top_k}", "score cohérence moyen"],
+        ascending=[False, True],
+    ).head(limit)
+
+
+def build_noisy_examples(noisy_df, max_examples=3):
+    examples = []
+    for _, row in noisy_df.head(max_examples).iterrows():
+        title = row["titre"] or "Titre non disponible"
+        negatives = row["termes négatifs retrouvés"] or "termes attendus insuffisants"
+        examples.append(f"{title} ({negatives})")
+    return " | ".join(examples)
+
+
+def render_noisy_results_summary(noisy_df, top_k):
+    st.caption(
+        "Cette section remplace l'inspection détaillée : elle montre directement les couples brevet/requête/méthode "
+        "qui ramènent le plus de résultats hors domaine."
+    )
+    with st.expander("Définition des scores de cette section", expanded=False):
+        st.write(
+            f"**Résultats hors domaine top {top_k}** : nombre de brevets du top {top_k} considérés comme bruités "
+            "ou hors sujet pour la requête."
+        )
+        st.write(
+            f"**Taux hors domaine top {top_k}** : `résultats hors domaine / {top_k} × 100`. "
+            "Plus ce taux est haut, plus la méthode ramène du bruit."
+        )
+        st.write(
+            "**Score cohérence moyen** : moyenne des scores de cohérence sujet des résultats retournés. "
+            "0 = très hors domaine ou aucun résultat exploitable ; 100 = très proche du sujet cible."
+        )
+        st.write(
+            "**Rang cible** : position du brevet cible dans les résultats. Vide signifie que le brevet cible n'a pas été retrouvé."
+        )
+        st.write(
+            "**Exemples hors domaine** : titres de quelques brevets jugés hors sujet, avec les termes négatifs détectés."
+        )
+    if noisy_df.empty:
+        st.success(f"Aucun résultat hors domaine détecté dans le top {top_k}.")
+        return
+    st.dataframe(noisy_df, hide_index=True, use_container_width=True)
+
+
+def shorten_text(value, max_words=45):
+    words = clean_value(value).split()
+    if len(words) <= max_words:
+        return " ".join(words)
+    return " ".join(words[:max_words]) + "..."
+
+
 def get_search_methods():
     return [
         ("TF-IDF pur", lambda moteur, query: moteur.chercher_tfidf(query)),
@@ -966,7 +1737,7 @@ def enrich_comparison_summary(summary_df, comparison_df, max_rank_display):
 
 
 def compute_noise_penalty(comparison_df, method_name, max_rank_display):
-    noisy_families = ["Requête large", "Requête bruitée ou discutable"]
+    noisy_families = ["Requête large", "Requête bruitée ou discutable", "Requête hors domaine"]
     method_df = comparison_df[
         (comparison_df["méthode"] == method_name)
         & (comparison_df["famille"].isin(noisy_families))
@@ -1241,8 +2012,12 @@ def render_family_definition_help():
         )
         st.write(
             "**Requête bruitée ou discutable** : la requête contient des termes volontairement éloignés ou peu naturels, "
-            "par exemple `automaton` ou `cleanser`. Cette famille est manuelle et sert à repérer les cas qui peuvent "
-            "introduire du bruit."
+            "par exemple des fautes de frappe comme `robto`, `clenaer` ou des tokens absurdes comme `qzxv`."
+        )
+        st.write(
+            "**Requête hors domaine** : la requête mélange le sujet robot cleaner avec des termes d'un autre domaine, "
+            "par exemple médical, finance, sport ou cybersécurité. Cette famille sert à vérifier que la méthode ne "
+            "récompense pas des formulations polluées par un autre univers métier."
         )
         st.write(
             "**Recherche brevet / prior art** : la requête ressemble à une recherche d'ingénieur brevet ou de juriste, "
@@ -1316,6 +2091,7 @@ def get_query_family_order():
         "Reformulation sémantique",
         "Requête large",
         "Requête bruitée ou discutable",
+        "Requête hors domaine",
         "Recherche brevet / prior art",
         "Recherche utilisateur naturelle",
     ]
@@ -1328,7 +2104,8 @@ def get_query_family_descriptions():
         "Pluriel / forme grammaticale": "Change surtout les formes des mots, par exemple singulier, pluriel ou forme en -ing.",
         "Reformulation sémantique": "Exprime l'idée avec d'autres mots proches du besoin initial.",
         "Requête large": "Reste très générale, avec un ou deux mots peu spécifiques.",
-        "Requête bruitée ou discutable": "Ajoute des termes éloignés, artificiels ou peu naturels pour le cas étudié.",
+        "Requête bruitée ou discutable": "Ajoute des fautes de frappe volontaires ou des tokens absurdes.",
+        "Requête hors domaine": "Mélange le sujet cible avec des termes d'un autre domaine métier.",
         "Recherche brevet / prior art": "Ressemble à une recherche technique ou juridique autour du brevet.",
         "Recherche utilisateur naturelle": "Formule le besoin comme un utilisateur non spécialiste.",
     }
@@ -1362,10 +2139,10 @@ def build_problematic_queries(comparison_df):
                     "lecture": "Les synonymes apportent un gain réel sur cette formulation.",
                 }
             )
-        elif family in ["Requête large", "Requête bruitée ou discutable"]:
+        elif family in ["Requête large", "Requête bruitée ou discutable", "Requête hors domaine"]:
             rows.append(
                 {
-                    "type": "Potentiellement bruitée",
+                    "type": "Potentiellement bruitée ou hors domaine",
                     "requête": query,
                     "famille": family,
                     "lecture": "Cette formulation peut favoriser des résultats peu spécifiques.",
@@ -1433,7 +2210,9 @@ def classify_query_family(query, target_title):
     if normalized_query in normalized_target:
         if has_case_or_punctuation_variation(query, normalized_query):
             return "Requête exacte"
-    if any(token in {"golem", "cleanser", "automaton"} for token in query_tokens):
+    if is_out_of_domain_query(query_tokens):
+        return "Requête hors domaine"
+    if is_noisy_query(query_tokens):
         return "Requête bruitée ou discutable"
     if is_broad_query(query_tokens, normalized_query):
         return "Requête large"
@@ -1462,6 +2241,25 @@ def normalize_for_family(value):
 
 def remove_punctuation(value):
     return re.sub(r"[^A-Za-z0-9\s]", " ", value)
+
+
+def is_noisy_query(query_tokens):
+    noisy_tokens = {
+        "golem", "cleanser", "automaton", "automoton", "clenaer", "cleaaner",
+        "roobt", "robto", "rboto", "cleaenr", "navigashun", "systme",
+        "intellignce", "qzxv", "blorpt", "xylophone", "banana",
+    }
+    noisy_hits = len(set(query_tokens) & noisy_tokens)
+    return noisy_hits >= 1
+
+
+def is_out_of_domain_query(query_tokens):
+    out_of_domain_tokens = {
+        "invoice", "malware", "aspirin", "glucose", "tumor", "toaster",
+        "cryptocurrency", "football", "chemotherapy", "diagnosis", "patient",
+        "spleen", "blockchain", "tax", "recipe",
+    }
+    return bool(set(query_tokens) & out_of_domain_tokens)
 
 
 def has_case_or_punctuation_variation(query, normalized_query):
@@ -1562,10 +2360,9 @@ def search_splade(moteur, query):
     if not query.strip():
         return []
 
-    if not moteur.corpus_vectors:
-        moteur.indexer_corpus_splade(moteur.documents, encoder=get_splade_encoder())
-
     try:
+        if not moteur.corpus_vectors:
+            moteur.indexer_corpus_splade(moteur.documents, encoder=get_splade_encoder())
         query_vector = get_splade_encoder().encode_queries(query)
     except Exception:
         return []
@@ -1659,10 +2456,14 @@ def build_search_engine(patents):
         moteur.charger_index(index_path)
 
     if not splade_index_matches_corpus(moteur.corpus_vectors, corpus):
-        print(f"Index SPLADE absent ou incomplet, création du cache dans {index_path}...")
-        moteur.indexer_corpus_splade(corpus, encoder=get_splade_encoder())
-        moteur.sauvegarder_index(index_path)
-        print(f"Index SPLADE sauvegardé dans {index_path}.")
+        try:
+            print(f"Index SPLADE absent ou incomplet, création du cache dans {index_path}...")
+            moteur.indexer_corpus_splade(corpus, encoder=get_splade_encoder())
+            moteur.sauvegarder_index(index_path)
+            print(f"Index SPLADE sauvegardé dans {index_path}.")
+        except Exception as error:
+            print(f"SPLADE indisponible, les méthodes lexicales restent utilisables : {error}")
+            moteur.corpus_vectors = {}
     else:
         moteur.corpus_vectors = {
             doc_id: moteur.corpus_vectors[doc_id]
