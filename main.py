@@ -843,6 +843,7 @@ def render_comparison_dashboard(
 
     st.subheader("5. Exemples par famille de requêtes")
     render_family_examples(comparison_df)
+    render_comparison_matrix(matrix_df, max_rank_display)
 
 
 def render_comparison_matrix(matrix_df, max_rank_display):
