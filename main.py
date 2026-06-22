@@ -1027,15 +1027,18 @@ def render_comparison_dashboard(
     st.subheader("5. Exemples par famille de requêtes")
     render_family_examples(comparison_df)
 
+    st.subheader("6. Matrice requête x méthode")
+    render_comparison_matrix(matrix_df, max_rank_display)
+
 
 def render_comparison_matrix(matrix_df, max_rank_display):
-    st.subheader("Matrice requête x méthode")
     st.caption(
         "1 signifie que le brevet cible apparaît dans le top choisi pour cette méthode ; "
         "0 signifie qu'il n'apparaît pas dans ce seuil."
     )
+    display_matrix_df = matrix_df.replace({1: "1", 0: "0"})
     st.dataframe(
-        matrix_df.style.background_gradient(axis=None, cmap="Greens", vmin=0, vmax=1),
+        display_matrix_df,
         use_container_width=True,
     )
 
