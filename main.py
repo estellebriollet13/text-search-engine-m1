@@ -20,6 +20,8 @@ DATASET_REQUIRED_COLUMNS = {"Patent ID", "Title", "Abstract"}
 TEXT_COLUMNS = ("Title", "Abstract")
 TARGET_PATENT_TITLE = "Artificial intelligence robot cleaner and robot cleaning system"
 VISIBILITY_TOP_RANK = 10
+DEFAULT_BM25_K1 = 2.0
+DEFAULT_BM25_B = 0.75
 EVALUATION_TARGET_COUNT = 10
 EVALUATION_RANDOM_STATE = 42
 GENERIC_TITLE_TERMS = {
@@ -263,11 +265,11 @@ def render_splade_tab():
 def render_comparison_tab():
     st.subheader("Comparaison des méthodes")
     st.write(
-        "Le premier dashboard mesure la retrouvabilité d'un brevet cible. "
+        "Le premier dashboard mesure la identification d'un brevet cible. "
         "Le second mesure la qualité globale des résultats retournés dans le top K."
     )
     retrievability_tab, quality_tab = st.tabs([
-        "Retrouvabilité du brevet cible",
+        "Identification du brevet cible",
         "Évaluation de la qualité du top 10",
     ])
 
@@ -410,14 +412,14 @@ def render_search_tab(
             step=5,
             key=f"{method_key}_max_results",
         )
-        bm25_k1 = 1.5
-        bm25_b = 0.75
+        bm25_k1 = DEFAULT_BM25_K1
+        bm25_b = DEFAULT_BM25_B
         if bm25_breakdown_variant is not None:
             bm25_k1 = st.slider(
                 "BM25 k1",
                 min_value=0.2,
                 max_value=3.0,
-                value=1.5,
+                value=DEFAULT_BM25_K1,
                 step=0.1,
                 key=f"{method_key}_bm25_k1",
                 help=(
@@ -429,7 +431,7 @@ def render_search_tab(
                 "BM25 b",
                 min_value=0.0,
                 max_value=1.0,
-                value=0.75,
+                value=DEFAULT_BM25_B,
                 step=0.05,
                 key=f"{method_key}_bm25_b",
                 help=(
@@ -647,8 +649,8 @@ def render_bm25_score_breakdown(moteur, query, first_result, patents, variant, k
     st.info(
         f"Paramètres utilisés : `k1 = {k1:.1f}` et `b = {b:.2f}`. "
         "`k1` règle la saturation de la fréquence : répéter un mot aide, mais de moins en moins. "
-        "`b` règle la correction par longueur du document. Par défaut, l'application propose `k1 = 1.5` "
-        "et `b = 0.75`, des réglages classiques de BM25."
+        f"`b` règle la correction par longueur du document. Par défaut, l'application propose `k1 = {DEFAULT_BM25_K1:.1f}` "
+        f"et `b = {DEFAULT_BM25_B:.2f}`."
     )
     st.metric(
         "Score total BM25 du premier résultat",
@@ -770,7 +772,7 @@ def render_comparison_definitions():
             "et une correction liée à la longueur du document."
         )
         st.write(
-            "**Paramètres BM25 utilisés** : `k1 = 1.5` et `b = 0.75`. "
+            f"**Paramètres BM25 utilisés** : `k1 = {DEFAULT_BM25_K1:.1f}` et `b = {DEFAULT_BM25_B:.2f}`. "
             "`k1` contrôle la saturation de la fréquence d'un mot : répéter un mot aide, mais de moins en moins. "
             "`b` contrôle la normalisation par longueur : avec `b = 0.75`, les documents très longs sont pénalisés "
             "partiellement pour éviter qu'ils gagnent seulement parce qu'ils contiennent plus de mots."
@@ -860,7 +862,7 @@ def render_comparison_dashboard(
             f"taux top {VISIBILITY_TOP_RANK}",
             "rang moyen",
             "temps moyen (ms)",
-            "lecture rapide",
+            "observation",
         ]
     ].rename(
         columns={
@@ -869,7 +871,7 @@ def render_comparison_dashboard(
             f"taux top {VISIBILITY_TOP_RANK}": "Taux top 10",
             "rang moyen": "Rang moyen",
             "temps moyen (ms)": "Temps moyen",
-            "lecture rapide": "Lecture rapide",
+            "observation": "observation",
         }
     )
     st.dataframe(top_methods_df, hide_index=True, use_container_width=True)
@@ -925,7 +927,7 @@ def render_evaluation_targets_section():
     )
     st.caption(
         "Cette évaluation reste heuristique : elle repose sur des termes attendus extraits du brevet cible "
-        "et des termes hors sujet construits depuis les autres cibles. Elle complète le dashboard de retrouvabilité "
+        "et des termes hors sujet construits depuis les autres cibles. Elle complète le dashboard de identification "
         "sans le remplacer."
     )
 
@@ -1462,7 +1464,7 @@ def build_target_quality_summary(quality_df, top_k, relevance_threshold=50):
                 f"Taux hors domaine top {top_k}": round(average_noisy_rate, 1),
                 "Nombre moyen hors domaine": round(average_noisy_count, 2),
                 "Temps moyen (ms)": round(average_time, 2),
-                "Lecture rapide": build_target_quality_reading(
+                "observation": build_target_quality_reading(
                     retrievability,
                     average_target_rank,
                     average_top_k,
@@ -1649,11 +1651,11 @@ def shorten_text(value, max_words=45):
 def get_search_methods():
     return [
         ("TF-IDF pur", lambda moteur, query: moteur.chercher_tfidf(query)),
-        ("BM25 pur", lambda moteur, query: moteur.chercher_bm25(query)),
+        ("BM25 pur", lambda moteur, query: moteur.chercher_bm25(query, k1=DEFAULT_BM25_K1, b=DEFAULT_BM25_B)),
         ("TF-IDF + synonymes", lambda moteur, query: moteur.chercher_tfidf_synonymes(query)),
-        ("BM25 + synonymes", lambda moteur, query: moteur.chercher_bm25_synonymes(query)),
+        ("BM25 + synonymes", lambda moteur, query: moteur.chercher_bm25_synonymes(query, k1=DEFAULT_BM25_K1, b=DEFAULT_BM25_B)),
         ("TF-IDF + lemmatisation", lambda moteur, query: moteur.chercher_tfidf_lemmatise(query)),
-        ("BM25 + lemmatisation", lambda moteur, query: moteur.chercher_bm25_lemmatise(query)),
+        ("BM25 + lemmatisation", lambda moteur, query: moteur.chercher_bm25_lemmatise(query, k1=DEFAULT_BM25_K1, b=DEFAULT_BM25_B)),
         ("SPLADE", search_splade),
     ]
 
@@ -2322,7 +2324,7 @@ def rank_methods(summary_df):
         ascending=[False, False, True, True],
     ).reset_index(drop=True)
     ranked_summary["rang dashboard"] = ranked_summary.index + 1
-    ranked_summary["lecture rapide"] = ranked_summary.apply(build_method_decision, axis=1)
+    ranked_summary["observation"] = ranked_summary.apply(build_method_decision, axis=1)
     return ranked_summary.drop(columns=["_rang_moyen_tri"])
 
 
