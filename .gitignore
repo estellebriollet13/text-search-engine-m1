@@ -2,6 +2,8 @@
 .log
 # Ignore data files
 data/*
+# Ignore local environment variables
+.env
 # Ignore Jupyter Notebook checkpoints
 .DS_Store
 # Ignore Python cache files

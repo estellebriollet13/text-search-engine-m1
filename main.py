@@ -12,6 +12,11 @@ import pandas as pd
 import streamlit as st
 
 import src.lib.MoteurRechercheTextuel as moteur_recherche_textuel_module
+from src.lib.llm_assistant import (
+    LLM_TOP_RESULTS,
+    load_llm_config as load_llm_config_from_env,
+    run_llm_search_assistant,
+)
 
 moteur_recherche_textuel_module = importlib.reload(moteur_recherche_textuel_module)
 MoteurRechercheTextuel = moteur_recherche_textuel_module.MoteurRechercheTextuel
@@ -27,6 +32,7 @@ VISIBILITY_TOP_RANK = 10
 SEARCH_ENGINE_CACHE_VERSION = "stemming-v2"
 PATENTSBERTA_MODEL_NAME = "AI-Growth-Lab/PatentSBERTa"
 PATENTSBERTA_INDEX_PATH = BASE_DIR / "index_patentsberta.pkl"
+ENV_PATH = BASE_DIR / ".env"
 DEFAULT_COMPARISON_QUERIES = [
     "Artificial intelligence robot cleaner",
     "ARTIFICIAL INTELLIGENCE ROBOT CLEANER",
@@ -123,14 +129,17 @@ def main():
 
     search_methods = get_search_methods()
     tab_names = [method_name for method_name, _ in search_methods]
-    tab_objects = st.tabs(tab_names + ["Comparaison"])
+    tab_objects = st.tabs(tab_names + ["Comparaison", "Assistant LLM"])
 
-    for tab, (method_name, _) in zip(tab_objects[:-1], search_methods):
+    for tab, (method_name, _) in zip(tab_objects[:-2], search_methods):
         with tab:
             render_search_method_tab(method_name)
 
-    with tab_objects[-1]:
+    with tab_objects[-2]:
         render_comparison_tab()
+
+    with tab_objects[-1]:
+        render_llm_assistant_tab()
 
 
 def render_search_method_tab(method_name):
@@ -631,6 +640,119 @@ def render_search_tab(
                 bm25_b,
             )
         render_results(results[:max_results], patents)
+
+
+def render_llm_assistant_tab():
+    st.subheader("Assistant de recherche brevets")
+    st.write(
+        "Cet onglet lance une recherche brevet, transmet les 2 premiers résultats au LLM, "
+        "puis lui demande de valider ou reformuler la requête."
+    )
+
+    llm_config = load_llm_config_from_env(ENV_PATH)
+    controls_col, results_col = st.columns([0.28, 0.72], gap="large")
+    total_documents = count_searchable_patents()
+
+    with controls_col:
+        max_documents = st.slider(
+            "Documents indexés",
+            min_value=1,
+            max_value=max(1, total_documents),
+            value=min(12000, total_documents),
+            step=1,
+            key="llm_assistant_max_documents",
+        )
+        search_mode = "SPLADE + PatentSBERTa"
+        st.caption("Recherche utilisée : `SPLADE + PatentSBERTa`")
+        st.metric("Résultats envoyés au LLM", LLM_TOP_RESULTS)
+        if llm_config["url"]:
+            st.success(f"API LLM configurée : {llm_config['url']}")
+            st.caption(f"Modèle : `{llm_config['model'] or 'non renseigné'}`")
+        else:
+            st.warning("Ajoutez `URL=...` et `MODEL=...` dans `.env` pour appeler le LLM.")
+
+    patents = load_patents(max_documents)
+    moteur = build_search_engine(patents, SEARCH_ENGINE_CACHE_VERSION)
+
+    with results_col:
+        query = st.text_area(
+            "Besoin utilisateur",
+            value="Find patents about an AI robot cleaner that plans cleaning routes automatically.",
+            height=100,
+            key="llm_assistant_query",
+        )
+
+        if not st.button("Chercher avec validation LLM", key="llm_assistant_run"):
+            render_empty_state(patents, "assistée par LLM")
+            return
+
+        if not query.strip():
+            st.warning("Saisissez une requête utilisateur avant de lancer la recherche.")
+            return
+
+        if not llm_config["url"] or not llm_config["model"]:
+            st.error(
+                "Configuration LLM incomplète. Dans `.env`, renseignez au minimum "
+                "`URL=http://...` et `MODEL=nom_du_modele`."
+            )
+            return
+
+        try:
+            assistant_result = run_llm_search_assistant(
+                patents=patents,
+                user_query=query,
+                search_mode=search_mode,
+                llm_config=llm_config,
+                search_callback=lambda candidate_query: search_hybrid_patentsberta_splade(
+                    moteur,
+                    candidate_query,
+                ),
+                clean_value=clean_value,
+            )
+        except Exception as error:
+            st.error("L'appel au LLM a échoué.")
+            st.warning(str(error))
+            return
+
+        render_llm_assistant_result(assistant_result, patents)
+
+
+def search_hybrid_patentsberta_splade(moteur, query, rrf_k=60):
+    if not query.strip():
+        return []
+
+    patentsberta_results = search_patentsberta(moteur, query)
+    splade_results = search_splade(moteur, query)
+    hybrid_scores = {}
+
+    add_rrf_scores(hybrid_scores, patentsberta_results, weight=0.5, rrf_k=rrf_k)
+    add_rrf_scores(hybrid_scores, splade_results, weight=0.5, rrf_k=rrf_k)
+
+    return sorted(hybrid_scores.items(), key=lambda item: item[1], reverse=True)
+
+
+def render_llm_assistant_result(assistant_result, patents):
+    if assistant_result["status"] == "success":
+        st.success("Le LLM juge les résultats suffisamment pertinents.")
+    else:
+        st.warning("Le LLM n'a pas trouvé de résultats suffisamment pertinents après reformulation.")
+
+    st.caption(f"Méthode : {assistant_result['search_mode']}")
+    st.caption(f"Requête finale : `{assistant_result['final_query']}`")
+    relevance_score = assistant_result.get("assessment", {}).get("relevance_score")
+    if relevance_score is not None:
+        st.metric("Pertinence estimée par le LLM", f"{relevance_score:.1f}/10")
+
+    if assistant_result["attempts"]:
+        with st.expander("Tentatives de requête"):
+            for index, attempted_query in enumerate(assistant_result["attempts"], start=1):
+                st.write(f"{index}. {attempted_query}")
+
+    st.markdown(assistant_result["answer"])
+
+    if assistant_result["results"]:
+        st.subheader("Brevets transmis au LLM")
+        render_results(assistant_result["results"], patents)
 
 
 def render_empty_state(patents, score_name):
